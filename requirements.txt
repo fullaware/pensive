@@ -1,0 +1,6 @@
+streamlit
+pymongo
+requests
+pydantic-ai
+ollama
+python-dotenv
