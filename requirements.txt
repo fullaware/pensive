@@ -5,3 +5,7 @@ pydantic-ai
 ollama
 python-dotenv
 logfire
+pydantic-ai-slim[duckduckgo]
+openmeteo-requests
+requests-cache
+retry-requests
