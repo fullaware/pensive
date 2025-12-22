@@ -1,0 +1,19 @@
+gradio
+pymongo[srv]
+requests
+pydantic-ai
+ollama
+python-dotenv
+logfire
+pydantic-ai-slim[duckduckgo]
+openmeteo-requests
+requests-cache
+retry-requests
+bcrypt
+httpx
+# Google Calendar API
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+plotly
+pandas
