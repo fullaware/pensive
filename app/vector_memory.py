@@ -31,16 +31,14 @@ def generate_embedding(text: str) -> list[float] | None:
         logger.warning("Cannot generate embedding for empty text")
         return None
     
-    if not LLM_API_KEY:
-        logger.error("LLM_API_KEY not configured - cannot generate embeddings")
-        return None
-    
     try:
         # OpenRouter uses OpenAI-compatible API for embeddings
         embeddings_url = f"{LLM_URI.rstrip('/')}/embeddings"
         
+        # Use placeholder API key for local providers that don't require authentication
+        api_key = LLM_API_KEY or "not-needed"
         headers = {
-            "Authorization": f"Bearer {LLM_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://github.com/pensive-ai",  # Optional but recommended
         }

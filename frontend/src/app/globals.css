@@ -1,0 +1,190 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Dark gray/blue theme with lighter blue highlights */
+    --background: 220 20% 10%;
+    --foreground: 220 15% 90%;
+    
+    --card: 220 18% 14%;
+    --card-foreground: 220 15% 90%;
+    
+    --primary: 210 80% 60%;
+    --primary-foreground: 220 20% 10%;
+    
+    --secondary: 220 18% 20%;
+    --secondary-foreground: 220 15% 90%;
+    
+    --muted: 220 18% 24%;
+    --muted-foreground: 220 10% 65%;
+    
+    --accent: 210 70% 55%;
+    --accent-foreground: 220 20% 10%;
+    
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 220 15% 90%;
+    
+    --border: 220 18% 22%;
+    --input: 220 18% 18%;
+    --ring: 210 80% 60%;
+    
+    --radius: 0.75rem;
+  }
+
+  .light {
+    --background: 220 20% 98%;
+    --foreground: 220 20% 10%;
+    
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 10%;
+    
+    --primary: 210 80% 50%;
+    --primary-foreground: 220 20% 98%;
+    
+    --secondary: 220 15% 92%;
+    --secondary-foreground: 220 20% 10%;
+    
+    --muted: 220 15% 94%;
+    --muted-foreground: 220 10% 40%;
+    
+    --accent: 210 70% 45%;
+    --accent-foreground: 220 20% 98%;
+    
+    --destructive: 0 84% 50%;
+    --destructive-foreground: 220 20% 98%;
+    
+    --border: 220 15% 88%;
+    --input: 220 15% 92%;
+    --ring: 210 80% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
+}
+
+@layer components {
+  /* Streaming cursor animation */
+  .streaming-cursor::after {
+    content: "▋";
+    @apply animate-cursor-blink text-primary;
+  }
+
+  /* Message animations */
+  .message-appear {
+    @apply animate-fade-in;
+  }
+
+  /* Gradient backgrounds */
+  .gradient-bg {
+    background: 
+      radial-gradient(ellipse at 20% 30%, hsl(210 80% 60% / 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 70%, hsl(210 70% 55% / 0.05) 0%, transparent 50%),
+      hsl(var(--background));
+  }
+
+  /* Glass effect */
+  .glass {
+    @apply backdrop-blur-xl bg-card/80 border border-border/50;
+  }
+
+  /* Input focus ring */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background;
+  }
+}
+
+/* Markdown content styling */
+.prose {
+  @apply text-foreground;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  @apply text-foreground font-semibold;
+}
+
+.prose p {
+  @apply text-foreground/90;
+}
+
+.prose code {
+  @apply bg-secondary text-foreground px-1.5 py-0.5 rounded text-sm;
+}
+
+.prose pre {
+  @apply bg-secondary border border-border rounded-lg p-4 overflow-x-auto;
+}
+
+.prose pre code {
+  @apply bg-transparent p-0;
+}
+
+.prose a {
+  @apply text-primary hover:underline;
+}
+
+.prose ul,
+.prose ol {
+  @apply text-foreground/90;
+}
+
+.prose blockquote {
+  @apply border-l-4 border-primary/50 pl-4 italic text-muted-foreground;
+}
+
+/* Table styling for Markdown */
+.prose table {
+  @apply w-full border-collapse my-4;
+}
+
+.prose thead {
+  @apply bg-secondary/50;
+}
+
+.prose tbody {
+  @apply divide-y divide-border;
+}
+
+.prose tr {
+  @apply border-b border-border hover:bg-secondary/30 transition-colors;
+}
+
+.prose th {
+  @apply border border-border px-4 py-2 text-left font-semibold text-foreground;
+}
+
+.prose td {
+  @apply border border-border px-4 py-2 text-foreground;
+}
+
+

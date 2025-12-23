@@ -24,16 +24,13 @@ from app.memory import MemoryStore, MemoryType
 from app.memory_extraction import extract_entities, extract_topics_and_keywords
 from app.weather import get_weather_report
 from app.auth.permissions import check_permission_or_message
-from app.auth.middleware import get_current_user
 
 
 def _get_user_from_context(ctx: RunContext) -> Optional["User"]:
-    """Extract user from RunContext deps or session state."""
-    # Try to get from deps first
+    """Extract user from RunContext deps."""
     if hasattr(ctx, "deps") and hasattr(ctx.deps, "current_user"):
         return ctx.deps.current_user
-    # Fall back to session state
-    return get_current_user()
+    return None
 
 
 def register_tools(agent: Agent, log_tool_usage: Callable[[str, str], None]) -> None:
@@ -177,7 +174,7 @@ def register_tools(agent: Agent, log_tool_usage: Callable[[str, str], None]) -> 
             return "Database unavailable. Cannot perform research."
 
         try:
-            if not LLM_MODEL or not LLM_URI or not LLM_API_KEY:
+            if not LLM_MODEL or not LLM_URI:
                 return "LLM configuration unavailable. Cannot create research agent."
 
             # First, do a direct memory search to gather relevant context
@@ -209,9 +206,11 @@ def register_tools(agent: Agent, log_tool_usage: Callable[[str, str], None]) -> 
             log_tool_usage("research_memory_search", f"found {len(search_results)} memories")
             
             # Create the research agent to analyze the findings
+            # Use placeholder API key for local providers that don't require authentication
+            api_key = LLM_API_KEY or "not-needed"
             research_model = OpenAIChatModel(
                 model_name=LLM_MODEL,
-                provider=OpenAIProvider(base_url=LLM_URI, api_key=LLM_API_KEY),
+                provider=OpenAIProvider(base_url=LLM_URI, api_key=api_key),
             )
 
             research_agent = Agent(
@@ -324,10 +323,10 @@ Provide your analysis now.""",
                     f"{formatted_messages}"
                 )
 
-                if not LLM_URI or not LLM_API_KEY or not LLM_MODEL:
+                if not LLM_URI or not LLM_MODEL:
                     return "LLM configuration unavailable. Cannot generate summaries."
 
-                client_openai = OpenAI(base_url=LLM_URI, api_key=LLM_API_KEY)
+                client_openai = OpenAI(base_url=LLM_URI, api_key=LLM_API_KEY or "not-needed")
                 response = client_openai.chat.completions.create(
                     model=LLM_MODEL,
                     messages=[

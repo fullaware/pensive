@@ -233,10 +233,10 @@ def auto_memory_maintenance() -> str:
                                 for msg in chunk
                             ])
                             
-                            if not LLM_URI or not LLM_API_KEY or not LLM_MODEL:
+                            if not LLM_URI or not LLM_MODEL:
                                 break
                             
-                            client_openai = OpenAI(base_url=LLM_URI, api_key=LLM_API_KEY)
+                            client_openai = OpenAI(base_url=LLM_URI, api_key=LLM_API_KEY or "not-needed")
                             response = client_openai.chat.completions.create(
                                 model=LLM_MODEL,
                                 messages=[

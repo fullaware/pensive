@@ -84,12 +84,14 @@ def create_agent() -> Agent:
     """Create and configure the main agent."""
     llm_model = None
     try:
-        if not LLM_MODEL or not LLM_URI or not LLM_API_KEY:
-            logger.error("LLM_MODEL, LLM_URI, or LLM_API_KEY not configured")
+        if not LLM_MODEL or not LLM_URI:
+            logger.error("LLM_MODEL or LLM_URI not configured")
             raise RuntimeError("LLM configuration missing.")
+        # Use placeholder API key for local providers that don't require authentication
+        api_key = LLM_API_KEY or "not-needed"
         llm_model = OpenAIChatModel(
             model_name=LLM_MODEL,
-            provider=OpenAIProvider(base_url=LLM_URI, api_key=LLM_API_KEY),
+            provider=OpenAIProvider(base_url=LLM_URI, api_key=api_key),
         )
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.error(f"Failed to initialize LLM model: {exc}")
@@ -118,12 +120,14 @@ def create_agent() -> Agent:
 
 def create_profile_agent(log_tool_usage) -> Agent:
     """Create a lightweight agent dedicated to managing the user profile."""
-    if not LLM_MODEL or not LLM_URI or not LLM_API_KEY:
+    if not LLM_MODEL or not LLM_URI:
         raise RuntimeError("LLM configuration missing. Cannot initialize profile agent.")
 
+    # Use placeholder API key for local providers that don't require authentication
+    api_key = LLM_API_KEY or "not-needed"
     profile_model = OpenAIChatModel(
         model_name=LLM_MODEL,
-        provider=OpenAIProvider(base_url=LLM_URI, api_key=LLM_API_KEY),
+        provider=OpenAIProvider(base_url=LLM_URI, api_key=api_key),
     )
 
     profile_agent = Agent(

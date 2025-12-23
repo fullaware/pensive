@@ -1,10 +1,7 @@
-gradio
 pymongo[srv]
 requests
 pydantic-ai
-ollama
 python-dotenv
-logfire
 pydantic-ai-slim[duckduckgo]
 openmeteo-requests
 requests-cache
@@ -17,3 +14,7 @@ google-auth-httplib2
 google-auth-oauthlib
 plotly
 pandas
+# FastAPI Backend
+fastapi
+uvicorn[standard]
+python-multipart

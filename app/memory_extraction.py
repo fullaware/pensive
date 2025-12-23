@@ -9,12 +9,12 @@ def extract_topics_and_keywords(text: str) -> dict:
     if not text or not isinstance(text, str) or len(text.strip()) < 10:
         return {"topics": [], "keywords": []}
     
-    if not LLM_URI or not LLM_API_KEY or not LLM_MODEL:
+    if not LLM_URI or not LLM_MODEL:
         logger.warning("LLM not configured for topic/keyword extraction")
         return {"topics": [], "keywords": []}
     
     try:
-        client_openai = OpenAI(base_url=LLM_URI, api_key=LLM_API_KEY)
+        client_openai = OpenAI(base_url=LLM_URI, api_key=LLM_API_KEY or "not-needed")
         prompt = f"""Extract 3-5 main topics and 5-10 key keywords from this text. 
 Return ONLY valid JSON in this exact format: {{"topics": ["topic1", "topic2"], "keywords": ["keyword1", "keyword2"]}}
 
@@ -50,12 +50,12 @@ def extract_entities(text: str) -> list:
     if not text or not isinstance(text, str) or len(text.strip()) < 10:
         return []
     
-    if not LLM_URI or not LLM_API_KEY or not LLM_MODEL:
+    if not LLM_URI or not LLM_MODEL:
         logger.warning("LLM not configured for entity extraction")
         return []
     
     try:
-        client_openai = OpenAI(base_url=LLM_URI, api_key=LLM_API_KEY)
+        client_openai = OpenAI(base_url=LLM_URI, api_key=LLM_API_KEY or "not-needed")
         prompt = f"""Extract entities (people, organizations, projects, locations) from this text.
 Return ONLY valid JSON array in this exact format: [{{"type": "person|org|project|location", "name": "Entity Name", "context": "brief context"}}]
 
