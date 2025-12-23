@@ -33,6 +33,10 @@ class UserResponse(BaseModel):
     created_at: datetime
     last_login: Optional[datetime] = None
     is_active: bool
+    system_prompt: Optional[str] = None
+    temperature: float = 0.7
+    assistant_name: Optional[str] = None
+    has_seen_onboarding: bool = False
 
 
 class CreateUserRequest(BaseModel):
@@ -54,8 +58,16 @@ class UpdateUserRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     """Request to change password."""
-    current_password: Optional[str] = None  # Optional for admin changing another user's password
+    user_id: Optional[str] = None  # Optional target user; omitted = current user
+    current_password: Optional[str] = None  # Required when non-admin changes own password
     new_password: str
+
+
+class UpdatePreferencesRequest(BaseModel):
+    """Request to update user preferences."""
+    system_prompt: Optional[str] = Field(None, max_length=5000, description="Custom system prompt (max 5000 chars)")
+    temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="AI temperature (0.0-2.0)")
+    assistant_name: Optional[str] = Field(None, max_length=100, description="What user wants to call the assistant")
 
 
 # ==================== Chat Models ====================
@@ -92,6 +104,7 @@ class MemorySearchRequest(BaseModel):
     memory_types: Optional[list[str]] = None
     limit: int = 20
     include_shared: bool = True
+    user_id: Optional[str] = None  # Admin-only: filter by specific user ID
 
 
 class MemorySearchResponse(BaseModel):
@@ -107,6 +120,9 @@ class MemoryItemResponse(BaseModel):
     memory_type: str
     importance: float
     timestamp: datetime
+    user_id: Optional[str] = None  # User who owns this memory
+    username: Optional[str] = None  # Username for display (admin only)
+    display_name: Optional[str] = None  # Display name for display (admin only)
     metadata: Optional[dict[str, Any]] = None
 
 
@@ -192,6 +208,40 @@ class ActivityLogItem(BaseModel):
     username: str
     action: str
     details: Optional[str] = None
+
+
+# ==================== Knowledge Models ====================
+
+class KnowledgeItemResponse(BaseModel):
+    """Knowledge item response."""
+    id: str
+    user_id: str
+    domain: str
+    topic: str
+    content: str
+    created_at: str  # ISO format string
+    updated_at: str  # ISO format string
+    metadata: Optional[dict[str, Any]] = None
+
+
+class KnowledgeListResponse(BaseModel):
+    """Knowledge list response."""
+    items: list[KnowledgeItemResponse]
+    total: int
+
+
+class CreateKnowledgeRequest(BaseModel):
+    """Request to create/update knowledge."""
+    domain: str = Field(..., description="Domain category (e.g., 'locations', 'preferences')")
+    topic: str = Field(..., description="Topic within domain (e.g., 'key_location')")
+    content: str = Field(..., description="Knowledge content")
+    metadata: Optional[dict[str, Any]] = None
+
+
+class UpdateKnowledgeRequest(BaseModel):
+    """Request to update knowledge."""
+    content: str = Field(..., description="Updated knowledge content")
+    metadata: Optional[dict[str, Any]] = None
 
 
 # Fix forward references

@@ -135,6 +135,43 @@ class UserManager:
             logger.error(f"Failed to update user '{user_id}': {e}")
             return False
     
+    def update_preferences(
+        self,
+        user_id: str,
+        system_prompt: Optional[str] = None,
+        temperature: Optional[float] = None,
+        assistant_name: Optional[str] = None,
+    ) -> bool:
+        """Update user preferences (system_prompt, temperature, assistant_name)."""
+        updates = {}
+        if system_prompt is not None:
+            # Empty string means "use default", store as None
+            updates["system_prompt"] = system_prompt.strip() if system_prompt.strip() else None
+        if temperature is not None:
+            if not (0.0 <= temperature <= 2.0):
+                raise ValueError("Temperature must be between 0.0 and 2.0")
+            updates["temperature"] = temperature
+        if assistant_name is not None:
+            # Empty string means "use default", store as None
+            updates["assistant_name"] = assistant_name.strip() if assistant_name.strip() else None
+        return self.update_user(user_id, updates) if updates else True
+    
+    def update_display_name(self, user_id: str, display_name: str) -> bool:
+        """Update user's display name."""
+        if not display_name or not display_name.strip():
+            raise ValueError("Display name cannot be empty")
+        return self.update_user(user_id, {"display_name": display_name.strip()})
+    
+    def update_assistant_name(self, user_id: str, assistant_name: str) -> bool:
+        """Update user's assistant name preference."""
+        # Empty string means "use default", store as None
+        value = assistant_name.strip() if assistant_name.strip() else None
+        return self.update_user(user_id, {"assistant_name": value})
+    
+    def mark_onboarding_complete(self, user_id: str) -> bool:
+        """Mark user as having completed onboarding."""
+        return self.update_user(user_id, {"has_seen_onboarding": True})
+    
     def change_password(self, user_id: str, new_password: str) -> bool:
         """Change a user's password."""
         try:

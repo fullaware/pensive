@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Callable, Optional
+import calendar
+import calendar
 
 from openai import OpenAI
 from pydantic_ai import Agent, RunContext
@@ -24,6 +26,9 @@ from app.memory import MemoryStore, MemoryType
 from app.memory_extraction import extract_entities, extract_topics_and_keywords
 from app.weather import get_weather_report
 from app.auth.permissions import check_permission_or_message
+from app.auth.manager import UserManager
+from database import users_collection, knowledge_collection
+from app.knowledge.store import KnowledgeStore
 
 
 def _get_user_from_context(ctx: RunContext) -> Optional["User"]:
@@ -41,6 +46,12 @@ def register_tools(agent: Agent, log_tool_usage: Callable[[str, str], None]) -> 
     if agent_memory_collection is not None:
         memory_store = MemoryStore(agent_memory_collection)
         logger.info("Memory store initialized for tools")
+    
+    # Initialize knowledge store for tools
+    knowledge_store = None
+    if knowledge_collection is not None:
+        knowledge_store = KnowledgeStore(knowledge_collection)
+        logger.info("Knowledge store initialized for tools")
 
     @agent.tool
     def retrieve_context(ctx: RunContext, search_query: str = "") -> str:
@@ -485,6 +496,196 @@ Provide your analysis now.""",
             return f"Error remembering context: {exc}"
 
     @agent.tool
+    def update_display_name(ctx: RunContext, display_name: str) -> str:
+        """Update the user's display name (what they prefer to be called).
+        
+        This tool should be used during onboarding when asking the user what they'd like to be called.
+        """
+        user = _get_user_from_context(ctx)
+        if not user:
+            return "Error: User context not available."
+        
+        if not display_name or not display_name.strip():
+            return "Error: Display name cannot be empty."
+        
+        try:
+            user_manager = UserManager(users_collection) if users_collection is not None else None
+            if user_manager is None:
+                return "Error: User management service unavailable."
+            
+            success = user_manager.update_display_name(user.id, display_name.strip())
+            if success:
+                # Update the user object in context
+                user.display_name = display_name.strip()
+                log_tool_usage("update_display_name", display_name.strip())
+                return f"Updated display name to '{display_name.strip()}'."
+            else:
+                return "Error: Failed to update display name."
+        except Exception as exc:
+            logger.error(f"Failed to update display name: {exc}")
+            return f"Error updating display name: {exc}"
+
+    @agent.tool
+    def update_assistant_name(ctx: RunContext, assistant_name: str) -> str:
+        """Update the assistant name (what the user wants to call the AI assistant).
+        
+        This tool should be used during onboarding when asking the user what they'd like to call the assistant.
+        """
+        user = _get_user_from_context(ctx)
+        if not user:
+            return "Error: User context not available."
+        
+        if not assistant_name or not assistant_name.strip():
+            return "Error: Assistant name cannot be empty."
+        
+        try:
+            user_manager = UserManager(users_collection) if users_collection is not None else None
+            if user_manager is None:
+                return "Error: User management service unavailable."
+            
+            success = user_manager.update_assistant_name(user.id, assistant_name.strip())
+            if success:
+                # Update the user object in context
+                user.assistant_name = assistant_name.strip()
+                log_tool_usage("update_assistant_name", assistant_name.strip())
+                return f"Updated assistant name to '{assistant_name.strip()}'."
+            else:
+                return "Error: Failed to update assistant name."
+        except Exception as exc:
+            logger.error(f"Failed to update assistant name: {exc}")
+            return f"Error updating assistant name: {exc}"
+
+    @agent.tool
+    def mark_onboarding_complete(ctx: RunContext) -> str:
+        """Mark the user's onboarding as complete.
+        
+        Call this after the user has provided their display name and assistant name preferences.
+        """
+        user = _get_user_from_context(ctx)
+        if not user:
+            return "Error: User context not available."
+        
+        try:
+            user_manager = UserManager(users_collection) if users_collection is not None else None
+            if user_manager is None:
+                return "Error: User management service unavailable."
+            
+            success = user_manager.mark_onboarding_complete(user.id)
+            if success:
+                user.has_seen_onboarding = True
+                log_tool_usage("mark_onboarding_complete", "")
+                return "Onboarding marked as complete."
+            else:
+                return "Error: Failed to mark onboarding as complete."
+        except Exception as exc:
+            logger.error(f"Failed to mark onboarding complete: {exc}")
+            return f"Error marking onboarding complete: {exc}"
+
+    @agent.tool
+    def get_knowledge(ctx: RunContext, domain: str, topic: str) -> str:
+        """Get a specific knowledge item by domain and topic.
+        
+        Knowledge items are mutable facts that users explicitly asked to remember.
+        Examples:
+        - domain: "locations", topic: "key_location" → "under the desk"
+        - domain: "preferences", topic: "favorite_color" → "blue"
+        """
+        user = _get_user_from_context(ctx)
+        if not user:
+            return "Error: User context not available."
+        
+        if knowledge_store is None:
+            return "Error: Knowledge service unavailable."
+        
+        try:
+            item = knowledge_store.get(user.id, domain, topic)
+            if item:
+                log_tool_usage("get_knowledge", f"{domain}/{topic}")
+                return f"Knowledge ({domain}/{topic}): {item.content}"
+            else:
+                return f"No knowledge found for {domain}/{topic}"
+        except Exception as exc:
+            logger.error(f"Failed to get knowledge: {exc}")
+            return f"Error retrieving knowledge: {exc}"
+
+    @agent.tool
+    def update_knowledge(
+        ctx: RunContext,
+        domain: str,
+        topic: str,
+        content: str,
+    ) -> str:
+        """Create or update a knowledge item.
+        
+        Use this when the user explicitly asks to remember something or updates existing knowledge.
+        Examples:
+        - "Remember my key is under the desk" → domain: "locations", topic: "key_location", content: "under the desk"
+        - "My key is now in the lockbox" → domain: "locations", topic: "key_location", content: "in the lockbox" (updates existing)
+        
+        Common domains: "locations", "preferences", "facts", "contacts"
+        """
+        user = _get_user_from_context(ctx)
+        if not user:
+            return "Error: User context not available."
+        
+        if knowledge_store is None:
+            return "Error: Knowledge service unavailable."
+        
+        if not domain or not topic or not content:
+            return "Error: Domain, topic, and content are required."
+        
+        try:
+            item_id = knowledge_store.upsert(
+                user_id=user.id,
+                domain=domain.strip().lower(),
+                topic=topic.strip().lower(),
+                content=content.strip(),
+            )
+            if item_id:
+                log_tool_usage("update_knowledge", f"{domain}/{topic}")
+                return f"Knowledge updated: {domain}/{topic} = {content.strip()}"
+            else:
+                return "Error: Failed to update knowledge"
+        except Exception as exc:
+            logger.error(f"Failed to update knowledge: {exc}")
+            return f"Error updating knowledge: {exc}"
+
+    @agent.tool
+    def list_knowledge(ctx: RunContext, domain: str = None) -> str:
+        """List all knowledge items, optionally filtered by domain.
+        
+        Returns a formatted list of knowledge items for the user.
+        """
+        user = _get_user_from_context(ctx)
+        if not user:
+            return "Error: User context not available."
+        
+        if knowledge_store is None:
+            return "Error: Knowledge service unavailable."
+        
+        try:
+            items = knowledge_store.list(user.id, domain=domain, limit=50)
+            if not items:
+                domain_msg = f" in domain '{domain}'" if domain else ""
+                return f"No knowledge items found{domain_msg}."
+            
+            log_tool_usage("list_knowledge", domain or "all")
+            
+            lines = []
+            if domain:
+                lines.append(f"Knowledge items in domain '{domain}':")
+            else:
+                lines.append("All knowledge items:")
+            
+            for item in items:
+                lines.append(f"  - {item.domain}/{item.topic}: {item.content}")
+            
+            return "\n".join(lines)
+        except Exception as exc:
+            logger.error(f"Failed to list knowledge: {exc}")
+            return f"Error listing knowledge: {exc}"
+
+    @agent.tool
     def search_by_entity(ctx: RunContext, entity_name: str, entity_type: str = None) -> str:
         """Search conversations by entity."""
         # Permission check
@@ -844,3 +1045,228 @@ Memory Types:
         
         from app.calendar import calendar_get_event as _get_event
         return _get_event(event_id=event_id)
+
+    @agent.tool
+    def get_current_datetime(ctx: RunContext, timezone_name: str = "UTC") -> str:
+        """Get the current date and time with timezone information.
+        
+        This tool provides the current date and time, which is essential for:
+        - Understanding relative dates like "tomorrow", "next week", "in 3 days"
+        - Making chronological decisions
+        - Recognizing significant dates (holidays, special occasions)
+        - Scheduling and time-sensitive tasks
+        
+        Args:
+            timezone_name: Optional timezone name (e.g., "America/New_York", "Europe/London").
+                          Defaults to "UTC". Common timezones: UTC, America/New_York, 
+                          America/Los_Angeles, Europe/London, Asia/Tokyo.
+        
+        Returns:
+            A formatted string with current date, time, day of week, and timezone information.
+        """
+        user = _get_user_from_context(ctx)
+        log_tool_usage("get_current_datetime", f"timezone={timezone_name}")
+        
+        try:
+            # Get current UTC time
+            now_utc = datetime.now(timezone.utc)
+            
+            # Try to convert to requested timezone if pytz is available
+            try:
+                import pytz
+                tz = pytz.timezone(timezone_name)
+                now_local = now_utc.astimezone(tz)
+                tz_name = now_local.tzname()
+                tz_offset = now_local.strftime("%z")
+            except (ImportError, Exception):
+                # Fallback to UTC if pytz not available or invalid timezone
+                try:
+                    # Try using zoneinfo (Python 3.9+)
+                    from zoneinfo import ZoneInfo
+                    tz = ZoneInfo(timezone_name)
+                    now_local = now_utc.astimezone(tz)
+                    tz_name = now_local.tzname()
+                    tz_offset = now_local.strftime("%z")
+                except (ImportError, Exception):
+                    now_local = now_utc
+                    tz_name = "UTC"
+                    tz_offset = "+0000"
+            
+            # Format date and time
+            date_str = now_local.strftime("%Y-%m-%d")
+            time_str = now_local.strftime("%H:%M:%S")
+            day_of_week = calendar.day_name[now_local.weekday()]
+            month_name = calendar.month_name[now_local.month]
+            day_of_year = now_local.timetuple().tm_yday
+            week_number = now_local.isocalendar()[1]
+            
+            # Check for significant dates
+            significant_dates = []
+            
+            # Major holidays (US-centric, but can be expanded)
+            month_day = (now_local.month, now_local.day)
+            holiday_map = {
+                (1, 1): "New Year's Day",
+                (2, 14): "Valentine's Day",
+                (3, 17): "St. Patrick's Day",
+                (4, 1): "April Fool's Day",
+                (5, 1): "May Day / International Workers' Day",
+                (7, 4): "Independence Day (US)",
+                (10, 31): "Halloween",
+                (11, 1): "All Saints' Day",
+                (11, 11): "Veterans Day (US) / Remembrance Day",
+                (12, 24): "Christmas Eve",
+                (12, 25): "Christmas Day",
+                (12, 31): "New Year's Eve",
+            }
+            
+            if month_day in holiday_map:
+                significant_dates.append(holiday_map[month_day])
+            
+            # Easter calculation (simplified - uses Western Easter)
+            year = now_local.year
+            # Easter calculation using algorithm
+            a = year % 19
+            b = year // 100
+            c = year % 100
+            d = b // 4
+            e = b % 4
+            f = (b + 8) // 25
+            g = (b - f + 1) // 3
+            h = (19 * a + b - d - g + 15) % 30
+            i = c // 4
+            k = c % 4
+            l = (32 + 2 * e + 2 * i - h - k) % 7
+            m = (a + 11 * h + 22 * l) // 451
+            month_easter = (h + l - 7 * m + 114) // 31
+            day_easter = ((h + l - 7 * m + 114) % 31) + 1
+            
+            if (now_local.month, now_local.day) == (month_easter, day_easter):
+                significant_dates.append("Easter Sunday")
+            
+            # Thanksgiving (US - 4th Thursday of November)
+            if now_local.month == 11:
+                # Find 4th Thursday
+                first_day = datetime(year, 11, 1).weekday()
+                thursday_offset = (3 - first_day) % 7
+                thanksgiving_day = 1 + thursday_offset + 21  # 4th Thursday
+                if now_local.day == thanksgiving_day:
+                    significant_dates.append("Thanksgiving (US)")
+            
+            # Build response
+            result = f"""Current Date and Time:
+📅 Date: {date_str} ({day_of_week})
+🕐 Time: {time_str} {tz_name} (UTC{tz_offset})
+📆 Month: {month_name} {now_local.year}
+📊 Day of year: {day_of_year} / 365
+📅 Week number: {week_number}
+🌍 Timezone: {tz_name}"""
+            
+            if significant_dates:
+                result += f"\n🎉 Today is: {', '.join(significant_dates)}"
+            
+            # Add relative date information
+            tomorrow = now_local + timedelta(days=1)
+            tomorrow_holiday = holiday_map.get((tomorrow.month, tomorrow.day))
+            if tomorrow_holiday:
+                result += f"\n📅 Tomorrow ({tomorrow.strftime('%Y-%m-%d')}) is: {tomorrow_holiday}"
+            
+            next_week = now_local + timedelta(days=7)
+            next_week_holiday = holiday_map.get((next_week.month, next_week.day))
+            if next_week_holiday:
+                result += f"\n📅 Next week ({next_week.strftime('%Y-%m-%d')}) is: {next_week_holiday}"
+            
+            return result
+            
+        except Exception as exc:
+            logger.error(f"Failed to get current datetime: {exc}")
+            return f"Error getting current datetime: {exc}"
+
+    @agent.tool
+    def get_date_info(ctx: RunContext, date_str: str = None) -> str:
+        """Get detailed information about a specific date.
+        
+        This tool helps understand dates mentioned in conversation, including:
+        - Day of week
+        - Whether it's a holiday or significant date
+        - Relative position (past, present, future)
+        - Days until/from the date
+        
+        Args:
+            date_str: Date in format YYYY-MM-DD. If not provided, uses today's date.
+        
+        Returns:
+            Detailed information about the requested date.
+        """
+        user = _get_user_from_context(ctx)
+        log_tool_usage("get_date_info", f"date={date_str or 'today'}")
+        
+        try:
+            now = datetime.now(timezone.utc)
+            
+            if date_str:
+                try:
+                    target_date = datetime.strptime(date_str, "%Y-%m-%d")
+                    target_date = target_date.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    return f"Invalid date format: {date_str}. Use YYYY-MM-DD format."
+            else:
+                target_date = now
+            
+            # Calculate relative information
+            days_diff = (target_date.date() - now.date()).days
+            if days_diff < 0:
+                relative = f"{abs(days_diff)} days ago"
+            elif days_diff == 0:
+                relative = "today"
+            elif days_diff == 1:
+                relative = "tomorrow"
+            else:
+                relative = f"in {days_diff} days"
+            
+            # Get date information
+            day_of_week = calendar.day_name[target_date.weekday()]
+            month_name = calendar.month_name[target_date.month]
+            
+            # Check for holidays
+            month_day = (target_date.month, target_date.day)
+            holiday_map = {
+                (1, 1): "New Year's Day",
+                (2, 14): "Valentine's Day",
+                (3, 17): "St. Patrick's Day",
+                (4, 1): "April Fool's Day",
+                (5, 1): "May Day / International Workers' Day",
+                (7, 4): "Independence Day (US)",
+                (10, 31): "Halloween",
+                (11, 1): "All Saints' Day",
+                (11, 11): "Veterans Day (US) / Remembrance Day",
+                (12, 24): "Christmas Eve",
+                (12, 25): "Christmas Day",
+                (12, 31): "New Year's Eve",
+            }
+            
+            holiday = holiday_map.get(month_day)
+            
+            result = f"""Date Information:
+📅 Date: {target_date.strftime('%Y-%m-%d')} ({day_of_week})
+📆 {month_name} {target_date.day}, {target_date.year}
+⏰ Relative: {relative}"""
+            
+            if holiday:
+                result += f"\n🎉 Holiday: {holiday}"
+            
+            # Add context about significance
+            if days_diff == 0:
+                result += "\n📍 This is today!"
+            elif days_diff == 1:
+                result += "\n📍 This is tomorrow!"
+            elif days_diff < 0:
+                result += f"\n📍 This date was in the past ({abs(days_diff)} days ago)"
+            else:
+                result += f"\n📍 This date is in the future ({days_diff} days from now)"
+            
+            return result
+            
+        except Exception as exc:
+            logger.error(f"Failed to get date info: {exc}")
+            return f"Error getting date information: {exc}"

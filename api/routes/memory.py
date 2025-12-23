@@ -22,7 +22,9 @@ from api.dependencies import (
     get_current_user,
     require_admin,
     get_memory_store,
+    get_user_manager,
 )
+from app.auth.manager import UserManager
 
 
 router = APIRouter()
@@ -33,13 +35,15 @@ async def list_memories(
     memory_types: Optional[str] = Query(None, description="Comma-separated memory types to filter"),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    user_id: Optional[str] = Query(None, description="Filter by specific user ID (admin only)"),
     current_user: User = Depends(get_current_user),
     memory_store: Optional[MemoryStore] = Depends(get_memory_store),
+    user_manager: Optional[UserManager] = Depends(get_user_manager),
 ):
     """
     List all memories with optional type filtering.
     Regular users can only see their own memories.
-    Admins can see all memories.
+    Admins can see all memories or filter by specific user_id.
     """
     if memory_store is None or memory_store.collection is None:
         raise HTTPException(
@@ -63,9 +67,22 @@ async def list_memories(
         # Build query
         query = {}
         
-        # Determine user_id filter based on role
-        if current_user.role != UserRole.ADMIN:
-            query["user_id"] = current_user.id
+        # Determine user_id filter based on role and user_id param
+        effective_user_id = None
+        if user_id:
+            # Admin can specify user_id to view another user's memories
+            if current_user.role != UserRole.ADMIN:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Admin privileges required to view other users' memories",
+                )
+            effective_user_id = user_id
+        elif current_user.role != UserRole.ADMIN:
+            # Regular users can only see their own memories
+            effective_user_id = current_user.id
+        
+        if effective_user_id is not None:
+            query["user_id"] = effective_user_id
         
         # Filter by memory types
         if parsed_types:
@@ -78,6 +95,20 @@ async def list_memories(
         cursor = memory_store.collection.find(query).sort("timestamp", -1).skip(offset).limit(limit)
         docs = list(cursor)
         
+        # If admin viewing all memories, fetch user info for display
+        user_info_map = {}
+        if current_user.role == UserRole.ADMIN and effective_user_id is None and user_manager:
+            # Collect unique user IDs from memories
+            user_ids = {doc.get("user_id") for doc in docs if doc.get("user_id")}
+            for uid in user_ids:
+                if uid:
+                    user = user_manager.get_user_by_id(uid)
+                    if user:
+                        user_info_map[uid] = {
+                            "username": user.username,
+                            "display_name": user.display_name,
+                        }
+        
         response_items = [
             MemoryItemResponse(
                 id=str(doc.get("_id", "")),
@@ -85,6 +116,9 @@ async def list_memories(
                 memory_type=doc.get("memory_type", "unknown"),
                 importance=doc.get("importance_score", 0.5),
                 timestamp=_parse_timestamp(doc.get("timestamp")),
+                user_id=doc.get("user_id"),
+                username=user_info_map.get(doc.get("user_id"), {}).get("username") if current_user.role == UserRole.ADMIN else None,
+                display_name=user_info_map.get(doc.get("user_id"), {}).get("display_name") if current_user.role == UserRole.ADMIN else None,
                 metadata=doc.get("metadata", {}),
             )
             for doc in docs
@@ -110,11 +144,12 @@ async def search_memories(
     request: MemorySearchRequest,
     current_user: User = Depends(get_current_user),
     memory_store: Optional[MemoryStore] = Depends(get_memory_store),
+    user_manager: Optional[UserManager] = Depends(get_user_manager),
 ):
     """
     Search through memories using text search.
     Regular users can only search their own memories.
-    Admins can search all memories.
+    Admins can search all memories or filter by specific user_id (via request.user_id).
     """
     if memory_store is None:
         raise HTTPException(
@@ -134,8 +169,21 @@ async def search_memories(
                     detail=f"Invalid memory type. Valid types: {[mt.value for mt in MemoryType]}",
                 )
         
-        # Determine user_id filter based on role
-        user_id = current_user.id if current_user.role != UserRole.ADMIN else None
+        # Determine user_id filter based on role and request.user_id
+        effective_user_id = None
+        if request.user_id:
+            # Admin can specify user_id to search another user's memories
+            if current_user.role != UserRole.ADMIN:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Admin privileges required to search other users' memories",
+                )
+            effective_user_id = request.user_id
+        elif current_user.role != UserRole.ADMIN:
+            # Regular users can only search their own memories
+            effective_user_id = current_user.id
+        
+        user_id = effective_user_id
         
         results = memory_store.text_search(
             query_text=request.query,
@@ -144,6 +192,20 @@ async def search_memories(
             limit=request.limit,
         )
         
+        # If admin viewing all memories, fetch user info for display
+        user_info_map = {}
+        if current_user.role == UserRole.ADMIN and user_id is None and user_manager:
+            # Collect unique user IDs from memories
+            user_ids = {mem.user_id for mem in results if mem.user_id}
+            for uid in user_ids:
+                if uid:
+                    user = user_manager.get_user_by_id(uid)
+                    if user:
+                        user_info_map[uid] = {
+                            "username": user.username,
+                            "display_name": user.display_name,
+                        }
+        
         response_items = [
             MemoryItemResponse(
                 id=mem.id or "",
@@ -151,6 +213,9 @@ async def search_memories(
                 memory_type=mem.memory_type.value if hasattr(mem.memory_type, 'value') else str(mem.memory_type),
                 importance=mem.importance_score,
                 timestamp=mem.timestamp,
+                user_id=mem.user_id,
+                username=user_info_map.get(mem.user_id, {}).get("username") if current_user.role == UserRole.ADMIN else None,
+                display_name=user_info_map.get(mem.user_id, {}).get("display_name") if current_user.role == UserRole.ADMIN else None,
                 metadata=mem.metadata,
             )
             for mem in results

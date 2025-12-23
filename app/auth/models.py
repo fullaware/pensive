@@ -59,6 +59,11 @@ class User(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login: Optional[datetime] = None
     is_active: bool = True
+    # User preferences
+    system_prompt: Optional[str] = None  # Custom system prompt for AI assistant
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)  # AI temperature (0.0-2.0)
+    assistant_name: Optional[str] = None  # What user wants to call the assistant
+    has_seen_onboarding: bool = False  # Track if user has completed onboarding
     
     model_config = {
         "populate_by_name": True,
@@ -95,6 +100,16 @@ class User(BaseModel):
         for field in ["created_at", "last_login"]:
             if field in data and isinstance(data[field], str):
                 data[field] = datetime.fromisoformat(data[field].replace("Z", "+00:00"))
+        
+        # Set defaults for new fields if not present
+        if "system_prompt" not in data:
+            data["system_prompt"] = None
+        if "temperature" not in data:
+            data["temperature"] = 0.7
+        if "assistant_name" not in data:
+            data["assistant_name"] = None
+        if "has_seen_onboarding" not in data:
+            data["has_seen_onboarding"] = False
         
         # Remove old fields that no longer exist
         data.pop("relationships", None)

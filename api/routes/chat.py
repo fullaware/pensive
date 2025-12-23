@@ -20,7 +20,8 @@ from config import (
 from database import client
 from app.auth.models import User
 from app.memory import MemoryStore, MemoryType
-from app.agent_factory import Deps, create_agent
+from pydantic_ai import Agent
+from app.agent_factory import Deps, create_agent, create_user_agent, ONBOARDING_SYSTEM_PROMPT
 from app.context import get_recent_context_for_prompt
 from app.memory_extraction import extract_topics_and_keywords, extract_entities
 from app.profile import build_user_profile_context
@@ -37,8 +38,8 @@ from api.dependencies import (
 
 router = APIRouter()
 
-# Global agent instance (lazy init)
-_agent = None
+# Per-user agent cache (lazy init)
+_agents: dict[str, Agent] = {}
 _agent_lock = asyncio.Lock()
 
 
@@ -54,19 +55,22 @@ def log_tool_usage(tool_name: str, details: str = "") -> None:
     logger.info(f"[tool] {tool_name} — {details}")
 
 
-async def get_or_create_agent():
-    """Get or create the chat agent (singleton)."""
-    global _agent
+async def get_or_create_agent(user: User):
+    """Get or create a user-specific agent with their preferences."""
+    global _agents
     async with _agent_lock:
-        if _agent is None:
+        user_id = user.id
+        if user_id not in _agents:
             try:
-                _agent = create_agent()
-                register_tools(_agent, log_tool_usage)
-                logger.info("Chat agent created and tools registered")
+                # Create user-specific agent with their preferences
+                agent = create_user_agent(user)
+                register_tools(agent, log_tool_usage)
+                _agents[user_id] = agent
+                logger.info(f"Chat agent created for user {user_id} with preferences")
             except Exception as e:
-                logger.error(f"Failed to create agent: {e}")
+                logger.error(f"Failed to create agent for user {user_id}: {e}")
                 raise
-        return _agent
+        return _agents[user_id]
 
 
 def parse_thinking_content(text: str) -> tuple[str, str]:
@@ -123,7 +127,38 @@ async def stream_chat_response(
     thinking_content = ""
     
     try:
-        agent = await get_or_create_agent()
+        # Check if this is a new user who needs onboarding
+        needs_onboarding = not user.has_seen_onboarding
+        is_onboarding = False
+        
+        # Determine if we should use onboarding prompt
+        if needs_onboarding:
+            # Check if display_name or assistant_name need to be set
+            from app.auth.manager import UserManager
+            from api.dependencies import get_user_manager
+            user_manager = get_user_manager()
+            
+            # Check if display_name is default/empty (compare with username or check if it's a default)
+            needs_display_name = not user.display_name or user.display_name.strip() == "" or user.display_name.lower() == user.username.lower()
+            needs_assistant_name = not user.assistant_name
+            
+            if needs_display_name or needs_assistant_name:
+                is_onboarding = True
+        
+        # Get or create user-specific agent
+        agent = await get_or_create_agent(user)
+        
+        # If onboarding, temporarily use onboarding system prompt
+        if is_onboarding:
+            # Create a temporary agent with onboarding prompt for this conversation
+            from app.agent_factory import create_agent
+            onboarding_agent = create_agent(
+                system_prompt=ONBOARDING_SYSTEM_PROMPT,
+                temperature=user.temperature,
+                assistant_name=user.assistant_name,
+            )
+            register_tools(onboarding_agent, log_tool_usage)
+            agent = onboarding_agent
         
         # Store user message
         if memory_store is not None:
@@ -160,7 +195,18 @@ async def stream_chat_response(
         
         profile_context = build_user_profile_context(user.display_name)
         
-        augmented_prompt = f"""User Profile:
+        # Build onboarding context if needed
+        onboarding_context = ""
+        if is_onboarding:
+            onboarding_context = f"""
+ONBOARDING MODE: This is a new user who hasn't completed onboarding yet.
+- Check if display_name needs updating: {needs_display_name}
+- Check if assistant_name needs setting: {needs_assistant_name}
+- If either is missing, ask the user for their preference and use the update_display_name or update_assistant_name tools.
+- After both are set, explain the system capabilities and mark onboarding as complete.
+"""
+        
+        augmented_prompt = f"""{onboarding_context}User Profile:
 {profile_context}
 
 Recent Context:
@@ -234,6 +280,28 @@ Current message from {user.display_name}:
         final_token_count = estimate_tokens(final_response)
         input_token_count = estimate_tokens(message)
         avg_tps = final_token_count / total_elapsed if total_elapsed > 0 else 0
+        
+        # Check if onboarding was completed (tools were called)
+        # This is a simple check - in a more sophisticated implementation, we'd track tool calls
+        # For now, we'll check if both display_name and assistant_name are set after the response
+        if is_onboarding:
+            from api.dependencies import get_user_manager
+            user_manager = get_user_manager()
+            if user_manager:
+                # Refresh user to check if preferences were set
+                updated_user = user_manager.get_user_by_id(user.id)
+                if updated_user:
+                    has_display_name = updated_user.display_name and updated_user.display_name.strip() and updated_user.display_name.lower() != updated_user.username.lower()
+                    has_assistant_name = updated_user.assistant_name and updated_user.assistant_name.strip()
+                    
+                    # If both are set, mark onboarding as complete
+                    if has_display_name and has_assistant_name and not updated_user.has_seen_onboarding:
+                        user_manager.mark_onboarding_complete(user.id)
+                        user.has_seen_onboarding = True
+                        # Invalidate agent cache to pick up new preferences
+                        global _agents
+                        if user.id in _agents:
+                            del _agents[user.id]
         
         # Record metrics
         if metrics_collector:

@@ -16,6 +16,7 @@ from api.routes import (
     memory_router,
     admin_router,
     metrics_router,
+    knowledge_router,
 )
 
 
@@ -65,6 +66,7 @@ app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
 app.include_router(memory_router, prefix="/api/memory", tags=["Memory"])
 app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
 app.include_router(metrics_router, prefix="/api/metrics", tags=["Metrics"])
+app.include_router(knowledge_router, prefix="/api/knowledge", tags=["Knowledge"])
 
 
 @app.get("/api/health")

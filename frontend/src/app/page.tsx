@@ -30,7 +30,9 @@ export default function HomePage() {
       <header className="sticky top-0 z-50 border-b border-border/50 bg-background/95 backdrop-blur-sm">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold text-foreground">Pensive</h1>
+            <h1 className="text-xl font-semibold text-foreground">
+              {user?.assistant_name || "Pensive"}
+            </h1>
             <span className="text-sm text-muted-foreground">
               {user?.display_name}
             </span>
@@ -42,6 +44,14 @@ export default function HomePage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/settings")}
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Settings
+            </Button>
             {isAdmin && (
               <Button
                 variant="ghost"

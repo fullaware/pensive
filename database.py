@@ -10,6 +10,7 @@ sessions_collection = None
 session_messages_collection = None
 metrics_collection = None
 agent_memory_collection = None
+knowledge_collection = None
 
 # Set up MongoDB
 if MONGODB_URI:
@@ -21,6 +22,7 @@ if MONGODB_URI:
         session_messages_collection = db["session_messages"]
         metrics_collection = db["metrics"]
         agent_memory_collection = db["agent_memory"]
+        knowledge_collection = db["knowledge"]
         logger.info("Successfully connected to MongoDB (all collections initialized)")
     except Exception as e:
         logger.error(f"Failed to connect to MongoDB: {e}")

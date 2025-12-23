@@ -1,7 +1,7 @@
 """Admin routes for user management and system administration."""
 
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -31,6 +31,20 @@ from api.routes.auth import user_to_response
 
 
 router = APIRouter()
+
+
+def _parse_timestamp(ts: Any) -> datetime:
+    """Parse timestamp from ISO string or datetime object."""
+    if ts is None:
+        return datetime.now(timezone.utc)
+    if isinstance(ts, datetime):
+        return ts
+    if isinstance(ts, str):
+        try:
+            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
 
 
 # ==================== User Management ====================
@@ -330,8 +344,8 @@ async def get_user_sessions(
                 id=str(s.get("_id", "")),
                 user_id=user_id,
                 username=target_user.username,
-                started_at=s.get("started_at", datetime.now(timezone.utc)),
-                ended_at=s.get("ended_at"),
+                started_at=_parse_timestamp(s.get("started_at")),
+                ended_at=_parse_timestamp(s.get("ended_at")) if s.get("ended_at") else None,
                 message_count=len(s.get("messages", [])),
                 messages=[
                     ChatMessageResponse(

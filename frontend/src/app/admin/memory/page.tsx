@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Search,
@@ -13,14 +13,18 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRequireAdmin } from "@/lib/auth";
 import api, { MemoryItem, MemoryStats } from "@/lib/api";
 import { formatDateTime, formatRelativeTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
-export default function MemoryBrowserPage() {
+function MemoryBrowserContent() {
   const { isAdmin, isLoading } = useRequireAdmin();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const targetUserId = searchParams.get("user_id");
+  const targetUsername = searchParams.get("username");
   const [searchQuery, setSearchQuery] = useState("");
   const [allMemories, setAllMemories] = useState<MemoryItem[]>([]);
   const [searchResults, setSearchResults] = useState<MemoryItem[]>([]);
@@ -31,6 +35,8 @@ export default function MemoryBrowserPage() {
     { value: string; name: string; description: string }[]
   >([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(targetUserId);
+  const [users, setUsers] = useState<Array<{ id: string; username: string; display_name: string }>>([]);
   const [showSearch, setShowSearch] = useState(false);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [purgeSettings, setPurgeSettings] = useState({
@@ -47,15 +53,16 @@ export default function MemoryBrowserPage() {
     if (isAdmin) {
       loadStats();
       loadMemoryTypes();
+      loadUsers();
       loadAllMemories();
     }
-  }, [isAdmin]);
+  }, [isAdmin, targetUserId]);
 
   useEffect(() => {
     if (isAdmin) {
       loadAllMemories();
     }
-  }, [selectedTypes, isAdmin]);
+  }, [selectedTypes, isAdmin, targetUserId, selectedUserId]);
 
   const loadStats = async () => {
     try {
@@ -75,13 +82,25 @@ export default function MemoryBrowserPage() {
     }
   };
 
+  const loadUsers = async () => {
+    try {
+      const data = await api.listUsers(false); // Include inactive users
+      setUsers(data.map((u) => ({ id: u.id, username: u.username, display_name: u.display_name })));
+    } catch (error) {
+      console.error("Failed to load users:", error);
+    }
+  };
+
   const loadAllMemories = async () => {
     setIsLoadingMemories(true);
     try {
+      // Use selectedUserId if set, otherwise use targetUserId from URL
+      const userIdToUse = selectedUserId || targetUserId || undefined;
       const data = await api.listMemories(
         selectedTypes.length > 0 ? selectedTypes : undefined,
         500, // Load up to 500 memories
-        0
+        0,
+        userIdToUse
       );
       setAllMemories(data.results);
       setSearchResults([]); // Clear search results when loading all
@@ -98,9 +117,13 @@ export default function MemoryBrowserPage() {
 
     setIsSearching(true);
     try {
+      // Use selectedUserId if set, otherwise use targetUserId from URL
+      const userIdToUse = selectedUserId || targetUserId || undefined;
       const data = await api.searchMemories(
         searchQuery,
-        selectedTypes.length > 0 ? selectedTypes : undefined
+        selectedTypes.length > 0 ? selectedTypes : undefined,
+        20,
+        userIdToUse
       );
       setSearchResults(data.results);
     } catch (error) {
@@ -156,7 +179,7 @@ export default function MemoryBrowserPage() {
               Back
             </Button>
             <h1 className="text-xl font-semibold text-foreground">
-              Memory Browser
+              Memory Browser{targetUsername ? ` — ${targetUsername}` : ""}
             </h1>
           </div>
           <Button
@@ -273,6 +296,37 @@ export default function MemoryBrowserPage() {
             </div>
           </CardHeader>
           <CardContent>
+            {/* User Filter (Admin only, when not viewing specific user) */}
+            {!targetUserId && (
+              <div className="mb-4">
+                <label className="text-sm font-medium mb-2 block">Filter by User:</label>
+                <select
+                  value={selectedUserId || ""}
+                  onChange={(e) => {
+                    const newUserId = e.target.value || null;
+                    setSelectedUserId(newUserId);
+                    // Update URL if needed
+                    if (newUserId) {
+                      const user = users.find((u) => u.id === newUserId);
+                      if (user) {
+                        router.push(`/admin/memory?user_id=${newUserId}&username=${encodeURIComponent(user.display_name)}`, { scroll: false });
+                      }
+                    } else {
+                      router.push("/admin/memory", { scroll: false });
+                    }
+                  }}
+                  className="w-full max-w-xs h-10 rounded-md border border-border bg-input px-3 py-2 text-sm"
+                >
+                  <option value="">All Users</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.display_name} (@{user.username})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Type Filters */}
             <div className="mb-4">
               <label className="text-sm font-medium mb-2 block">Filter by Type:</label>
@@ -296,7 +350,7 @@ export default function MemoryBrowserPage() {
                     onClick={() => setSelectedTypes([])}
                     className="px-3 py-1 rounded-full text-xs font-medium bg-destructive/10 text-destructive hover:bg-destructive/20"
                   >
-                    Clear Filters
+                    Clear Type Filters
                   </button>
                 )}
               </div>
@@ -335,14 +389,22 @@ export default function MemoryBrowserPage() {
                   className="p-4 rounded-lg bg-secondary/30 border border-border/50"
                 >
                   <div className="flex items-start justify-between gap-4 mb-2">
-                    <span
-                      className={cn(
-                        "px-2 py-0.5 rounded text-xs font-medium",
-                        "bg-primary/10 text-primary"
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={cn(
+                          "px-2 py-0.5 rounded text-xs font-medium",
+                          "bg-primary/10 text-primary"
+                        )}
+                      >
+                        {memory.memory_type}
+                      </span>
+                      {memory.display_name && (
+                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-secondary text-secondary-foreground">
+                          {memory.display_name}
+                          {memory.username && ` (@${memory.username})`}
+                        </span>
                       )}
-                    >
-                      {memory.memory_type}
-                    </span>
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       Importance: {memory.importance.toFixed(2)}
                     </div>
@@ -385,14 +447,22 @@ export default function MemoryBrowserPage() {
                       className="p-4 rounded-lg bg-secondary/30 border border-border/50"
                     >
                       <div className="flex items-start justify-between gap-4 mb-2">
-                        <span
-                          className={cn(
-                            "px-2 py-0.5 rounded text-xs font-medium",
-                            "bg-primary/10 text-primary"
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className={cn(
+                              "px-2 py-0.5 rounded text-xs font-medium",
+                              "bg-primary/10 text-primary"
+                            )}
+                          >
+                            {memory.memory_type}
+                          </span>
+                          {memory.display_name && (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-secondary text-secondary-foreground">
+                              {memory.display_name}
+                              {memory.username && ` (@${memory.username})`}
+                            </span>
                           )}
-                        >
-                          {memory.memory_type}
-                        </span>
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           Importance: {memory.importance.toFixed(2)}
                         </div>
@@ -522,4 +592,15 @@ export default function MemoryBrowserPage() {
   );
 }
 
+export default function MemoryBrowserPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen gradient-bg flex items-center justify-center">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    }>
+      <MemoryBrowserContent />
+    </Suspense>
+  );
+}
 

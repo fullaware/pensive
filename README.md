@@ -16,6 +16,7 @@ A self-hosted AI assistant with persistent memory, designed for families. Featur
 - **Google Calendar Integration**: Create, view, update, and delete calendar events
 - **Web Search**: DuckDuckGo integration for research tasks
 - **Research Agent**: Spawn sub-agents for deep research tasks
+- **Date & Time Awareness**: Current datetime with timezone support, holiday recognition, and contextual date understanding (e.g., "tomorrow is Christmas")
 
 ## 🏗️ Architecture
 
@@ -58,7 +59,7 @@ A self-hosted AI assistant with persistent memory, designed for families. Featur
 - Python 3.11+
 - Node.js 18+ (for frontend)
 - MongoDB 8.2+ (Community Edition with vector search support)
-- LLM API access (OpenRouter, OpenAI, Ollama, or compatible endpoint)
+- LLM API access (LM Studio, OpenRouter, OpenAI, Ollama, or compatible endpoint)
 
 ## 🚀 Quick Start
 
@@ -106,12 +107,7 @@ GOOGLE_CALENDAR_ID=primary
 
 ### 3. Start MongoDB
 
-```bash
-# Using Docker
-docker run -d --name mongodb -p 27017:27017 mongodb/mongodb-community-server:latest
-
-# Or install locally: https://www.mongodb.com/docs/manual/installation/
-```
+For a complete MongoDB Community + Search + Monitoring stack (including Prometheus and Grafana), see the `mdb-community-search` project: [JohnGUnderwood/mdb-community-search](https://github.com/JohnGUnderwood/mdb-community-search).
 
 ### 4. Run with Docker Compose (Recommended)
 
@@ -168,6 +164,8 @@ npm run dev
 | Tool | Admin | User |
 |------|-------|------|
 | Weather | ✅ | ✅ |
+| Current Date/Time | ✅ | ✅ |
+| Date Information | ✅ | ✅ |
 | Search Conversations | ✅ | ✅ |
 | Remember/Mark Important | ✅ | ✅ |
 | Calendar - View | ✅ | ✅ |

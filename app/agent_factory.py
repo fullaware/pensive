@@ -15,6 +15,11 @@ from config import (
     LLM_URI,
     logger,
 )
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.auth.models import User
+
 from app.profile import (
     profile_snapshot_json,
     upsert_profile_field,
@@ -27,6 +32,23 @@ class Deps(BaseModel):
     current_user: object = None  # The authenticated user (app.auth.models.User)
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+
+DEFAULT_SYSTEM_PROMPT = """You are a helpful, knowledgeable AI assistant with infinite memory capabilities.
+
+Your primary goals:
+- Provide accurate, helpful responses to user queries
+- Use your memory tools to recall past conversations
+- Maintain context across long conversations
+- Be concise but thorough
+- Ask clarifying questions when needed
+
+Communication style:
+- Friendly and professional
+- Clear and direct
+- Adapt to the user's communication style
+- Use appropriate tone for the context
+
+You have access to tools for memory management, web search, weather, and more. Use them appropriately to provide the best assistance."""
 
 SYSTEM_PROMPT = """
 You are a helpful chat assistant with infinite recall capabilities. You have access to tools that allow you to:
@@ -62,6 +84,21 @@ For each user query:
 The goal is to maintain infinite recall while keeping the main conversation context clean and focused, and proactively managing memory. Use web search when you need current information that isn't in your memory.
 """
 
+ONBOARDING_SYSTEM_PROMPT = """
+You are helping a new user get started with the AI assistant. Your job is to:
+
+1. Ask the user what they would like to be called (their preferred display name)
+2. Ask the user what they would like to call you (the assistant name)
+3. Use the update_display_name and update_assistant_name tools to save their preferences
+4. After preferences are collected, explain the system capabilities:
+   - How to ask to remember things (knowledge management)
+   - Available tools and features
+   - How conversations are saved as memory
+   - The difference between knowledge (mutable facts) and memory (conversation history)
+
+Be friendly, conversational, and helpful. Ask one question at a time and wait for the user's response before asking the next question.
+"""
+
 PROFILE_SYSTEM_PROMPT = """
 You are the user's profile curator. Your job is to detect long-lived identity details
 (name, pronouns, role) and communication preferences from new user messages.
@@ -80,8 +117,18 @@ information, simply respond with a short acknowledgement and do not call tools.
 """
 
 
-def create_agent() -> Agent:
-    """Create and configure the main agent."""
+def create_agent(
+    system_prompt: Optional[str] = None,
+    temperature: Optional[float] = None,
+    assistant_name: Optional[str] = None,
+) -> Agent:
+    """Create and configure the main agent with optional user-specific settings.
+    
+    Args:
+        system_prompt: Custom system prompt. If None, uses default SYSTEM_PROMPT.
+        temperature: Model temperature (0.0-2.0). If None, uses default.
+        assistant_name: Name to use in place of "Pensive" in prompts.
+    """
     llm_model = None
     try:
         if not LLM_MODEL or not LLM_URI:
@@ -100,12 +147,26 @@ def create_agent() -> Agent:
     if llm_model is None:
         raise RuntimeError("Failed to initialize LLM model")
 
+    # Use custom system prompt or default
+    effective_prompt = system_prompt or SYSTEM_PROMPT
+    
+    # Replace "Pensive" with assistant_name if provided
+    if assistant_name:
+        effective_prompt = effective_prompt.replace("Pensive", assistant_name)
+        effective_prompt = effective_prompt.replace("pensive", assistant_name.lower())
+
+    # Build model settings
+    model_settings = {}
+    if temperature is not None:
+        model_settings["temperature"] = temperature
+
     agent = Agent(
         llm_model,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=effective_prompt,
         retries=1,
         deps_type=Deps,
         tools=[duckduckgo_search_tool()],
+        model_settings=model_settings if model_settings else None,
     )
 
     @agent.output_validator
@@ -116,6 +177,22 @@ def create_agent() -> Agent:
         return output
 
     return agent
+
+
+def create_user_agent(user: "User") -> Agent:
+    """Create an agent with user-specific preferences.
+    
+    Args:
+        user: User model with preferences (system_prompt, temperature, assistant_name)
+    
+    Returns:
+        Configured Agent instance
+    """
+    return create_agent(
+        system_prompt=user.system_prompt,
+        temperature=user.temperature,
+        assistant_name=user.assistant_name,
+    )
 
 
 def create_profile_agent(log_tool_usage) -> Agent:
