@@ -289,6 +289,9 @@ class AgenticOrchestrator:
 
         # Get base system prompt
         base_prompt = await self.system_prompts.build_system_prompt(context)
+        
+        # Add instruction to not output JSON for responses
+        base_prompt = f"{base_prompt}\n\nIMPORTANT: When responding to the user, always use natural language. Do not output JSON or any other structured data format unless explicitly asked to do so."
 
         # Add memory context
         memory_context = []

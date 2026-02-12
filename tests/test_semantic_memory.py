@@ -266,6 +266,11 @@ async def test_retrieve_family_facts(test_db):
     """Test that family-related facts can be retrieved via vector search."""
     memory = SemanticMemory()
     
+    # Since the database was cleared, we need to add some family facts first
+    # Add sample family facts for testing
+    await memory.add_fact(category="user", key="spouse_name", value="Nikki", increment_version=False)
+    await memory.add_fact(category="user", key="daughter_name", value="Brenna", increment_version=False)
+    
     # Get family-related facts from the database
     family_facts = await memory.get_all_facts()
     family_facts = [f for f in family_facts if any(
@@ -274,7 +279,7 @@ async def test_retrieve_family_facts(test_db):
     )]
     
     # Should have family-related facts in the database
-    assert len(family_facts) >= 2
+    assert len(family_facts) >= 2, f"Expected at least 2 family facts, found {len(family_facts)}"
     
     # Verify they have embeddings
     for fact in family_facts:
