@@ -37,8 +37,8 @@ flowchart LR
 
   response --> userReturn[Return Response to User]
   response --> shortTermMem[Update Short-Term Memory]
-  shortTermMem --> commitEpisodic[Commit to Episodic Memory (Background)]
-  commitEpisodic --> commitSemantic[Commit to Semantic Memory (Background)]
+  shortTermMem --> commitEpisodic[Commit to Episodic Memory]
+  commitEpisodic --> commitSemantic[Commit to Semantic Memory]
 
   style userReturn fill:#d4edda,stroke:#333
   style commitEpisodic fill:#ffe4b6,stroke:#333
