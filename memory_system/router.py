@@ -1,4 +1,4 @@
- # Query Router Module
+# Query Router Module
 """Query router that determines intent and routes to appropriate memory system."""
 from typing import List, Dict, Optional
 from memory_system.config import Config
@@ -45,6 +45,8 @@ Examples:
 - "What tasks are due?" -> intent: task, query: "due tasks"
 - "How long did I work on X?" -> intent: time, query: "time spent on X"
 - "Tell me about yesterday" -> intent: conversation, query: "yesterday"
+- "What projects have we worked on?" -> intent: fact, query: "projects"
+- "Tell me about our current work?" -> intent: fact, query: "current work"
 """
 
         messages = [
@@ -144,28 +146,8 @@ Examples:
         intent = await self.determine_intent(user_query)
         query = await self.generate_memory_query(user_query, intent)
 
-        # Determine which memory systems to query
-        memory_systems = []
-
-        if intent["intent"] == "fact":
-            memory_systems.append("semantic")
-        elif intent["intent"] == "location" or "where" in user_query.lower():
-            memory_systems.append("semantic")
-            memory_systems.append("episodic")
-        elif intent["intent"] == "task":
-            memory_systems.append("episodic")
-            memory_systems.append("time")
-        elif intent["intent"] == "time":
-            memory_systems.append("episodic")
-            memory_systems.append("time")
-        elif intent["intent"] == "conversation":
-            memory_systems.append("short_term")
-            memory_systems.append("episodic")
-        else:
-            # Default: query all memory systems
-            memory_systems.append("short_term")
-            memory_systems.append("episodic")
-            memory_systems.append("semantic")
+        # Always query all memory systems - let the AI decide what's relevant
+        memory_systems = ["short_term", "episodic", "semantic"]
 
         return {
             "intent": intent,

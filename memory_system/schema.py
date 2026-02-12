@@ -27,10 +27,11 @@ class FactSchema:
         confidence: float = 1.0,
         metadata: Optional[Dict] = None,
         version: int = 1,
+        embedding: Optional[List[float]] = None,
     ) -> Dict:
         """Create a new fact document."""
         now = datetime.now(timezone.utc)
-        return {
+        doc = {
             "type": "fact",
             "category": category,
             "key": key,
@@ -41,6 +42,9 @@ class FactSchema:
             "updated_at": now,
             "metadata": metadata or {},
         }
+        if embedding is not None:
+            doc["embedding"] = embedding
+        return doc
 
     @staticmethod
     def update(fact_id: str, updates: Dict, increment_version: bool = True) -> Dict:

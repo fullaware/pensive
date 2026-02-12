@@ -12,26 +12,27 @@ An AI agent system with multiple memory types (Short-Term, Episodic, Semantic) i
 - **System Prompts**: Dynamic prompt management with user preferences
 - **Pushover Notifications**: Alert system for important events
 - **REST API**: OpenAI-compatible API for integration with tools like OpenWebUI
+- **Dynamic Fact Detection**: LLM-based extraction of important information from conversations
+- **Vector Search for Facts**: Semantic similarity-based fact retrieval using embeddings
+
+## Features (AI Agent Perspective)
+
+### Dynamic Memory Learning
+
+- **Automatic Fact Extraction**: The system uses LLM to extract important information from user conversations without hardcoded fact types
+- **Vector-Based Retrieval**: Facts are stored with embeddings and retrieved using semantic similarity search
+- **Version Tracking**: Facts support versioning with archived history for tracking changes over time
+- **No Manual Schema Updates**: New facts can be learned on-the-fly without code changes
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  userQuery[User Query] --> router[Query Router: LLM Intent Detection]
-  router --> routeDecision{Intent Type?}
+  userQuery[User Query] --> router[Query Router: Always Query All Memory Systems]
+  router --> allMemories[All Memory Systems: short_term, episodic, semantic]
 
-  routeDecision -->|fact| semantic[Semantic Memory: Query Facts]
-  routeDecision -->|location| semantic
-  routeDecision -->|task| episodic[Episodic Memory: Vector Search]
-  routeDecision -->|time| episodic
-  routeDecision -->|conversation| shortTerm[Short-Term Memory: Session History]
-  routeDecision -->|other| allMemories[All Memory Systems]
-
-  semantic --> queryResults[Retrieved Memories]
-  episodic --> queryResults
-  shortTerm --> queryResults
-
-  queryResults --> systemPrompt[Build System Prompt]
+  allMemories --> queryResults[Retrieved Memories from All Systems]
+  queryResults --> systemPrompt[Build System Prompt with Retrieved Memories]
   systemPrompt --> llm[LLM Generation]
   llm --> response[Response]
 
@@ -47,7 +48,6 @@ flowchart LR
   end
 
   subgraph llmFlow [LLM Processing Flow]
-    router
     systemPrompt
     llm
   end

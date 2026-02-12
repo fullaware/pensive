@@ -67,7 +67,8 @@ async def test_close_router():
 async def test_router_with_complex_query():
     """Test routing with a complex query."""
     router = QueryRouter()
-    intent = await router.determine_intent(
-        "Based on our conversation yesterday, what project are we working on?"
-    )
-    assert intent["intent"] in ["conversation", "task"]
+    # Router should always return all memory systems for the AI to decide what's relevant
+    routing = await router.route_query("Based on our conversation yesterday, what project are we working on?")
+    assert "semantic" in routing["memory_systems"]
+    assert "episodic" in routing["memory_systems"]
+    assert "short_term" in routing["memory_systems"]

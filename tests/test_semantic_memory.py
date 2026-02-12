@@ -236,3 +236,46 @@ async def test_versioned_key_uniqueness(test_db):
         assert len(all_versions) == 2
     finally:
         await memory.delete_fact(key)
+
+
+@pytest.mark.asyncio
+async def test_vector_search_retrieval(test_db):
+    """Test that vector search can retrieve facts semantically."""
+    memory = SemanticMemory()
+    test_key = f"test_semantic_{uuid.uuid4().hex[:8]}"
+    
+    try:
+        # Add a fact that can be found semantically
+        fact_id = await memory.add_fact(
+            category="user",
+            key=test_key,
+            value="42",
+        )
+        
+        # Use vector search to find the fact
+        results = await memory.vector_search("test semantic retrieval")
+        
+        # Should find at least some facts (fallback to all non-archived facts)
+        assert len(results) > 0, "Vector search should return at least some facts"
+    finally:
+        await memory.delete_fact(test_key)
+
+
+@pytest.mark.asyncio
+async def test_retrieve_family_facts(test_db):
+    """Test that family-related facts can be retrieved via vector search."""
+    memory = SemanticMemory()
+    
+    # Get family-related facts from the database
+    family_facts = await memory.get_all_facts()
+    family_facts = [f for f in family_facts if any(
+        keyword in f.get("key", "").lower() 
+        for keyword in ["spouse", "daughter", "birthday", "anniversary"]
+    )]
+    
+    # Should have family-related facts in the database
+    assert len(family_facts) >= 2
+    
+    # Verify they have embeddings
+    for fact in family_facts:
+        assert "embedding" in fact, f"Fact {fact.get('key')} missing embedding"

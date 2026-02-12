@@ -3,7 +3,7 @@
 from typing import List, Dict, Optional
 from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorCollection
-from memory_system import db, FactSchema, COLLECTION_FACTS
+from memory_system import db, FactSchema, COLLECTION_FACTS, Config
 
 
 class SemanticMemory:
@@ -11,6 +11,17 @@ class SemanticMemory:
 
     def __init__(self):
         self.collection: AsyncIOMotorCollection = db.get_collection(COLLECTION_FACTS)
+        self.dimensions = Config.EMBEDDING_DIMENSIONS
+        self.vector_limit = Config.VECTOR_SEARCH_LIMIT
+        self._embedding_client = None
+
+    @property
+    def embedding_client(self):
+        """Lazy load embedding client."""
+        if self._embedding_client is None:
+            from utils import EmbeddingClient
+            self._embedding_client = EmbeddingClient()
+        return self._embedding_client
 
     async def add_fact(
         self,
@@ -20,6 +31,7 @@ class SemanticMemory:
         confidence: float = 1.0,
         metadata: Optional[Dict] = None,
         increment_version: bool = True,
+        embedding: Optional[List[float]] = None,
     ) -> str:
         """Add a new fact to semantic memory.
 
@@ -30,10 +42,16 @@ class SemanticMemory:
             confidence: Confidence score (0-1)
             metadata: Additional context
             increment_version: If True and key exists, increment version and archive old; if False, always create new version
+            embedding: Optional pre-computed embedding for vector search
 
         Returns:
             The created fact's ObjectId as string
         """
+        # Generate embedding if not provided
+        if embedding is None:
+            fact_text = f"{key}: {value}"
+            embedding = await self.embedding_client.generate_embedding(fact_text)
+        
         # Check if fact with same key exists
         existing = await self.get_fact(key)
         
@@ -53,6 +71,7 @@ class SemanticMemory:
                 confidence=confidence,
                 metadata=metadata,
                 version=new_version,
+                embedding=embedding,
             )
         else:
             # Create new fact with version 1
@@ -62,6 +81,7 @@ class SemanticMemory:
                 value=value,
                 confidence=confidence,
                 metadata=metadata,
+                embedding=embedding,
             )
         
         result = await self.collection.insert_one(fact_doc)
@@ -254,20 +274,59 @@ class SemanticMemory:
         facts = await self.get_facts_by_category("user")
         return {f.get("key", ""): f.get("value", "") for f in facts}
 
-    async def get_tech_stack(self) -> Optional[str]:
-        """Get the user's preferred tech stack.
+    async def vector_search(
+        self, query: str, filters: Optional[Dict] = None, limit: int = None
+    ) -> List[Dict]:
+        """Search semantic memory using vector similarity.
+
+        Args:
+            query: Query text to search for
+            filters: Optional filters (category, etc.)
+            limit: Number of results to return
 
         Returns:
-            Tech stack string or None if not stored
+            List of matching facts sorted by similarity
         """
-        fact = await self.get_fact("tech_stack", category="preference")
-        return fact.get("value") if fact else None
+        # Generate embedding for the query
+        query_embedding = await self.embedding_client.generate_embedding(query)
+        if not query_embedding:
+            # Fall back to returning all non-archived facts
+            cursor = self.collection.find({"archived": {"$ne": True}})
+            return await cursor.to_list(length=limit or self.vector_limit)
 
-    async def get_communication_style(self) -> Optional[str]:
-        """Get the user's preferred communication style.
+        try:
+            # Build aggregation pipeline for vector search
+            pipeline = [
+                {
+                    "$vectorSearch": {
+                        "index": "vector_index",
+                        "path": "embedding",
+                        "queryVector": query_embedding,
+                        "numCandidates": limit or self.vector_limit * 5,
+                        "limit": limit or self.vector_limit,
+                    }
+                },
+                {"$set": {"score": {"$meta": "vectorSearchScore"}}},
+            ]
 
-        Returns:
-            Communication style string or None if not stored
-        """
-        fact = await self.get_fact("communication_style", category="preference")
-        return fact.get("value") if fact else None
+            if filters:
+                pipeline.insert(1, {"$match": filters})
+
+            cursor = self.collection.aggregate(pipeline)
+            results = await cursor.to_list(length=limit or self.vector_limit)
+            
+            # If no results from vector search, fall back to all non-archived facts
+            if not results:
+                cursor = self.collection.find({"archived": {"$ne": True}})
+                results = await cursor.to_list(length=limit or self.vector_limit)
+            
+            return results
+        except Exception as e:
+            # Vector search not available, return all non-archived facts
+            print(f"Vector search error: {e}")
+            cursor = self.collection.find({"archived": {"$ne": True}})
+            return await cursor.to_list(length=limit or self.vector_limit)
+
+    async def close(self):
+        """Close any resources."""
+        pass

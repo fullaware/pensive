@@ -199,7 +199,7 @@ class AgenticOrchestrator:
         return memories
 
     async def _query_semantic_memory(self, query: str) -> List[Dict]:
-        """Query semantic memory for relevant facts.
+        """Query semantic memory for relevant facts using vector search.
 
         Args:
             query: Query string
@@ -207,57 +207,10 @@ class AgenticOrchestrator:
         Returns:
             List of relevant facts
         """
-        query_lower = query.lower()
-
-        # For location-based queries, return all location facts
-        if "where" in query_lower or "location" in query_lower:
-            facts = await self.semantic.get_facts_by_category("location")
-            if facts:
-                return facts
-
-        # For birthday queries
-        if "birthday" in query_lower:
-            facts = await self.semantic.get_facts_by_category("user")
-            if facts:
-                # Filter for birthday-related facts
-                birthday_facts = [f for f in facts if "birthday" in f.get("key", "").lower()]
-                if birthday_facts:
-                    return birthday_facts
-
-        # For name-related queries (check for both "name" and "user name")
-        if "name" in query_lower:
-            name = await self.semantic.get_user_name()
-            if name:
-                return [{"key": "name", "value": name}]
-
-        # For tech stack queries
-        if "tech" in query_lower or "stack" in query_lower or "technology" in query_lower:
-            stack = await self.semantic.get_tech_stack()
-            if stack:
-                return [{"key": "tech_stack", "value": stack}]
-
-        # For communication style queries
-        if "communication" in query_lower or "style" in query_lower or "talk" in query_lower:
-            comm_style = await self.semantic.get_communication_style()
-            if comm_style:
-                return [{"key": "communication_style", "value": comm_style}]
-
-        # For general fact queries, return all facts
-        if "fact" in query_lower or "who" in query_lower or "what" in query_lower:
-            all_facts = await self.semantic.get_all_facts()
-            if all_facts:
-                return all_facts
-
-        # For name-related queries without explicit keywords, check all facts
-        if "name" in query_lower:
-            all_facts = await self.semantic.get_all_facts()
-            if all_facts:
-                # Filter for name-related facts
-                name_facts = [f for f in all_facts if "name" in f.get("key", "").lower()]
-                if name_facts:
-                    return name_facts
-
-        return []
+        # Use vector search for semantic memory - it will find relevant facts based on similarity
+        # Don't filter by category - let the vector search determine relevance
+        facts = await self.semantic.vector_search(query)
+        return facts
 
     async def _query_episodic_memory(
         self, query: str, session_id: str
@@ -341,7 +294,23 @@ class AgenticOrchestrator:
         memory_context = []
         if memories.get("retrieved", {}).get("semantic"):
             memory_context.append("User Facts:")
+            
+            # Handle location facts - sort by timestamp and only show most recent
+            location_facts = []
+            other_facts = []
             for fact in memories["retrieved"]["semantic"]:
+                if fact.get("key", "").lower().endswith("_location") or "location" in fact.get("key", "").lower():
+                    location_facts.append(fact)
+                else:
+                    other_facts.append(fact)
+            
+            # Sort location facts by timestamp (most recent first) and only include the most recent
+            location_facts.sort(key=lambda x: x.get("created_at", datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
+            for fact in location_facts[:1]:  # Only include most recent location
+                memory_context.append(f"- {fact.get('key', '')}: {fact.get('value', '')}")
+            
+            # Include all other facts
+            for fact in other_facts:
                 memory_context.append(f"- {fact.get('key', '')}: {fact.get('value', '')}")
 
         if memories.get("retrieved", {}).get("short_term"):
@@ -403,10 +372,10 @@ class AgenticOrchestrator:
         # Add user query
         messages.append({"role": "user", "content": user_query})
 
-        # Add intent information for context
+        # Add intent information for context (but not as system message to avoid JSON formatting)
         intent_str = f"\n\nUser Intent: {intent.get('intent', 'unknown')}"
         intent_str += f"\nReasoning: {intent.get('reasoning', 'N/A')}"
-        messages.append({"role": "system", "content": intent_str})
+        messages.append({"role": "user", "content": f"User query context: {intent_str}"})
 
         response = await self.llm.generate(messages, temperature=0, max_tokens=None)
         return response or "I'm not sure how to answer that."
@@ -421,12 +390,17 @@ class AgenticOrchestrator:
         Returns:
             Fact ID
         """
+        # Generate embedding for the preference
+        preference_text = f"{key}: {value}"
+        embedding = await self.embedding_client.generate_embedding(preference_text)
+        
         return await self.semantic.add_fact(
             category="user",
             key=key,
             value=value,
             confidence=1.0,
             metadata={"preference": True},
+            embedding=embedding,
         )
 
     async def delete_facts(self, query: Dict) -> Dict:
@@ -449,9 +423,9 @@ class AgenticOrchestrator:
 
         This method identifies and stores important information including:
         - Important dates (birthdays, anniversaries)
-        - Relationships (family, friends, colleagues)
-        - Personas (personal preferences, communication style)
-        - Projects (current work, ongoing projects)
+        - Relationships (who is related to whom, who's a friend/colleague)
+        - Personas (personal preferences, communication style, habits)
+        - Projects (current work, ongoing projects, tech stack)
         - Location facts (where things are kept)
         - Contact information (phone, email, address)
 
@@ -464,16 +438,15 @@ class AgenticOrchestrator:
             return
 
         # Use LLM to determine if user is providing an important fact
-        fact_detection_prompt = """Analyze the user's message and identify any important information that should be remembered.
+        fact_detection_prompt = """Analyze the user's message and identify any important personal or factual information that should be remembered.
 
-Important information includes:
-- Important dates (birthdays, anniversaries, deadlines)
-- Relationships (who is related to whom, who's a friend/colleague)
-- Personas (personal preferences, communication style, habits)
-- Projects (current work, ongoing projects, tech stack)
-- Locations (where things are kept, home address)
-- Contact information (phone, email, address)
-- Important facts about people (names, nicknames, titles)
+IMPORTANT: Extract ALL important information about:
+1. People - names, relationships (daughter, son, wife, husband, friend, colleague, etc.)
+2. Dates - birthdays, anniversaries, deadlines, important dates
+3. Projects - current work, ongoing projects, tech stack
+4. Preferences - favorite things, habits, likes/dislikes
+5. Contact info - phone, email, address
+6. Location info - where things are kept
 
 User Message: {user_query}
 
@@ -490,18 +463,18 @@ Respond in JSON format:
     ]
 }}
 
-Examples:
-- "My birthday is Nov 5, 1981" -> {{"category": "date", "key": "birthday", "value": "November 5, 1981", "confidence": 0.95}}
-- "My wife is Sarah" -> {{"category": "relationship", "key": "spouse", "value": "Sarah", "confidence": 0.9}}
-- "My son is John" -> {{"category": "relationship", "key": "son", "value": "John", "confidence": 0.9}}
-- "I'm working on the AI project using Python" -> {{"category": "project", "key": "current_project", "value": "AI project with Python", "confidence": 0.85}}
-- "My keys are under the table" -> {{"category": "location", "key": "keys_location", "value": "under the table", "confidence": 0.9}}
-- "My phone number is 555-1234" -> {{"category": "contact", "key": "phone", "value": "555-1234", "confidence": 0.9}}
+Rules for extraction:
+- Extract information about ANY person mentioned, including their name and relationship to user
+- Extract ANY important date mentioned (especially if it's the user's or their family member's birthday)
+- Extract any project or work the user is doing
+- Extract any preference or habit the user mentions
+- Always use descriptive, unique keys (e.g., "child_name_daughter", "birthday_spouse", "current_project")
+- Only extract information that is explicitly stated, not inferred
 """
 
         messages = [
             {"role": "system", "content": fact_detection_prompt.format(user_query=user_query)},
-            {"role": "user", "content": "Identify any important facts from the message above."},
+            {"role": "user", "content": "Identify all important facts from the message above."},
         ]
 
         try:
@@ -526,11 +499,16 @@ Examples:
                             confidence = fact.get("confidence", 0.9)
                             
                             if key and value:
+                                # Generate embedding for the fact (key + value for better search)
+                                fact_text = f"{key}: {value}"
+                                embedding = await self.embedding_client.generate_embedding(fact_text)
+                                
                                 await self.semantic.add_fact(
                                     category=category,
                                     key=key,
                                     value=value,
                                     confidence=confidence,
+                                    embedding=embedding,
                                 )
         except Exception:
             pass
