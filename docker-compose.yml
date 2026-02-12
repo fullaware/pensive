@@ -17,8 +17,6 @@ services:
       - SHORT_TERM_MEMORY_SIZE=${SHORT_TERM_MEMORY_SIZE:-10}
       - EPISODIC_MEMORY_LIMIT=${EPISODIC_MEMORY_LIMIT:-100}
       - VECTOR_SEARCH_LIMIT=${VECTOR_SEARCH_LIMIT:-5}
-      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
-      - PUSHOVER_USER=${PUSHOVER_USER:-}
     env_file:
       - .env
     restart: unless-stopped

@@ -10,7 +10,6 @@ An AI agent system with multiple memory types (Short-Term, Episodic, Semantic) i
 - **Time Management**: Tasks, reminders, and time tracking
 - **Query Router**: AI-powered query intention detection
 - **System Prompts**: Dynamic prompt management with user preferences
-- **Pushover Notifications**: Alert system for important events
 - **REST API**: OpenAI-compatible API for integration with tools like OpenWebUI
 - **Dynamic Fact Detection**: LLM-based extraction of important information from conversations
 - **Vector Search for Facts**: Semantic similarity-based fact retrieval using embeddings
@@ -104,10 +103,6 @@ VECTOR_SEARCH_LIMIT=5
 # Embedding Model Configuration
 # Set EMBEDDING_DIMENSIONS to match your embedding model output
 # text-embedding-qwen3-embedding-8b returns 1024 dimensions
-
-# Pushover Configuration
-PUSHOVER_TOKEN=your_pushover_token
-PUSHOVER_USER=your_pushover_user
 ```
 
 ## Usage
@@ -219,8 +214,7 @@ agents/
 │   └── orchestrator.py   # Main orchestrator with LLM fact detection
 ├── utils/                 # Utility modules
 │   ├── __init__.py
-│   ├── llm.py           # LLM and embedding client
-│   └── pushover.py      # Pushover notifications
+│   └── llm.py           # LLM and embedding client
 └── tests/                 # Test suite
     ├── __init__.py
     ├── conftest.py      # Test configuration and fixtures
@@ -252,7 +246,6 @@ agents/
 
 - **utils/**: Utility modules
   - `llm.py`: LLM and embedding client for Qwen/Qwen3-Coder-Next-GGUF model
-  - `pushover.py`: Pushover notification client
 
 - **tests/**: Comprehensive test suite
   - 28 tests covering all modules

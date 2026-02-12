@@ -20,10 +20,6 @@ class Config:
     LLM_MODEL = os.getenv("LLM_MODEL", "default-model")
     LLM_EMBEDDING_MODEL = os.getenv("LLM_EMBEDDING_MODEL", "default-embedding")
 
-    # Pushover Configuration
-    PUSHOVER_TOKEN = os.getenv("PUSHOVER_TOKEN", "")
-    PUSHOVER_USER = os.getenv("PUSHOVER_USER", "")
-
     # Memory Configuration
     SHORT_TERM_MEMORY_SIZE = int(os.getenv("SHORT_TERM_MEMORY_SIZE", "10"))
     EPISODIC_MEMORY_LIMIT = int(os.getenv("EPISODIC_MEMORY_LIMIT", "100"))
