@@ -1,4 +1,4 @@
-# Query Router Module
+ # Query Router Module
 """Query router that determines intent and routes to appropriate memory system."""
 from typing import List, Dict, Optional
 from memory_system.config import Config
@@ -52,14 +52,15 @@ Examples:
             {"role": "user", "content": f"Query: {user_query}"},
         ]
 
-        response = await self.llm_client.generate(messages, temperature=0.1, max_tokens=200)
+        response = await self.llm_client.generate(messages, temperature=0.1, max_tokens=500)
         return self._parse_intent_response(response)
 
-    def _parse_intent_response(self, response: Optional[str]) -> Dict:
+    def _parse_intent_response(self, response: Optional[str], user_query: str = "") -> Dict:
         """Parse the LLM intent response.
 
         Args:
             response: Raw LLM response string
+            user_query: Original user query for fallback parsing
 
         Returns:
             Parsed intent dictionary
@@ -85,29 +86,16 @@ Examples:
                 # Validate that intent is present
                 if "intent" in parsed:
                     return parsed
-                else:
-                    # JSON parsed but missing intent, use fallback
-                    pass
         except (json.JSONDecodeError, TypeError):
             pass
 
-        # Fallback parsing
-        intent = "other"
-        if "fact" in response.lower():
-            intent = "fact"
-        elif "task" in response.lower():
-            intent = "task"
-        elif "time" in response.lower():
-            intent = "time"
-        elif "conversation" in response.lower() or "history" in response.lower():
-            intent = "conversation"
-
+        # Return with LLM reasoning as fallback
         return {
-            "intent": intent,
+            "intent": "other",
             "query": response[:200] if response else "",
             "confidence": 0.5,
             "filters": {},
-            "reasoning": "Fallback intent detection",
+            "reasoning": f"LLM response: {response[:200]}",
         }
 
     async def generate_memory_query(self, user_query: str, intent: Dict) -> str:
@@ -174,6 +162,7 @@ Examples:
             memory_systems.append("short_term")
             memory_systems.append("episodic")
         else:
+            # Default: query all memory systems
             memory_systems.append("short_term")
             memory_systems.append("episodic")
             memory_systems.append("semantic")

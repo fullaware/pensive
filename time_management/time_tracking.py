@@ -1,6 +1,6 @@
 # Time Tracking Module
 """Time tracking for tasks and work sessions."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional
 from motor.motor_asyncio import AsyncIOMotorCollection
 from memory_system import db, TimeTrackingSchema

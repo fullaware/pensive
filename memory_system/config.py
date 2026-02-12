@@ -29,6 +29,9 @@ class Config:
     EPISODIC_MEMORY_LIMIT = int(os.getenv("EPISODIC_MEMORY_LIMIT", "100"))
     VECTOR_SEARCH_LIMIT = int(os.getenv("VECTOR_SEARCH_LIMIT", "5"))
 
+    # Embedding Configuration
+    EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "1024"))
+
     @classmethod
     def validate(cls) -> list[str]:
         """Validate required configuration values."""

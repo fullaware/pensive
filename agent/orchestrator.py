@@ -2,6 +2,7 @@
 """Main agent orchestrator that combines all memory systems."""
 from typing import List, Dict, Optional
 from datetime import datetime, timezone
+import time
 
 from memory_system import (
     ShortTermMemory,
@@ -10,8 +11,48 @@ from memory_system import (
     QueryRouter,
     SystemPromptsManager,
 )
-from utils import LLMClient
+from utils import LLMClient, EmbeddingClient
 from time_management import TaskManager, ReminderManager, TimeTracker
+
+
+class OrchestratorLogger:
+    """Logger for orchestrator stages with timing and metrics."""
+
+    def __init__(self):
+        self.stages: List[Dict] = []
+        self.start_time: float = 0
+
+    def start(self):
+        """Start timing."""
+        self.start_time = time.time()
+
+    def log_stage(self, stage: str, details: Optional[Dict] = None):
+        """Log a stage with timing."""
+        elapsed = time.time() - self.start_time
+        self.stages.append({
+            "stage": stage,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "elapsed_seconds": round(elapsed, 3),
+            "details": details or {}
+        })
+        print(f"[{stage}] elapsed={elapsed:.3f}s | {details}")
+
+    def get_summary(self) -> Dict:
+        """Get summary of all stages."""
+        total_time = time.time() - self.start_time
+        return {
+            "total_time_seconds": round(total_time, 3),
+            "stages": self.stages,
+            "tokens_per_second": self._calculate_tps()
+        }
+
+    def _calculate_tps(self) -> Optional[float]:
+        """Calculate tokens per second if we have token info."""
+        total_tokens = sum(s.get("details", {}).get("tokens", 0) for s in self.stages)
+        total_time = time.time() - self.start_time
+        if total_tokens > 0 and total_time > 0:
+            return round(total_tokens / total_time, 2)
+        return None
 
 
 class AgenticOrchestrator:
@@ -24,9 +65,11 @@ class AgenticOrchestrator:
         self.router = QueryRouter()
         self.system_prompts = SystemPromptsManager()
         self.llm = LLMClient()
+        self.embedding_client = EmbeddingClient()
         self.tasks = TaskManager()
         self.reminders = ReminderManager()
         self.time_tracker = TimeTracker()
+        self.logger = OrchestratorLogger()
 
     async def process_query(self, user_query: str, session_id: str = None) -> Dict:
         """Process a user query using all memory systems.
@@ -41,31 +84,52 @@ class AgenticOrchestrator:
                 - sources: Sources of information
                 - memories: Retrieved memories
                 - session_id: Session identifier
+                - timing: Timing information for each stage
         """
+        from datetime import datetime
+
+        self.logger.start()
+
         # Generate session ID if not provided
         if not session_id:
             session_id = f"session_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
 
         # Route the query to determine intent
+        self.logger.log_stage("intent_detection", {"query_length": len(user_query)})
         routing = await self.router.route_query(user_query)
         intent = routing["intent"]
+        self.logger.log_stage("intent_complete", {"intent": intent.get("intent", "unknown")})
 
         # Gather information from memory systems
+        self.logger.log_stage("memory_gathering", {"memory_systems": routing.get("memory_systems", [])})
         memories = await self._gather_memories(routing, user_query, session_id)
+        self.logger.log_stage("memory_complete", {"sources": memories.get("sources", [])})
 
         # Build system prompt with user preferences
+        self.logger.log_stage("prompt_building", {"memories_count": len(memories.get("retrieved", {}))})
         system_prompt = await self._build_system_prompt(memories)
+        self.logger.log_stage("prompt_complete", {"prompt_length": len(system_prompt)})
+
+        # If the query is about time/date, override the user query to include the current date
+        if intent.get("intent") == "time" or "today" in user_query.lower() or "current" in user_query.lower():
+            current_time = datetime.now(timezone.utc)
+            current_date_str = current_time.strftime("%B %d, %Y")
+            current_day = current_time.strftime("%A")
+            user_query = f"[CURRENT DATE: {current_day}, {current_date_str}] {user_query}"
 
         # Generate response using LLM
+        self.logger.log_stage("llm_generation", {"prompt_length": len(system_prompt)})
         answer = await self._generate_response(
             user_query, memories, system_prompt, intent
         )
+        self.logger.log_stage("llm_complete", {"response_length": len(answer)})
 
         # Add message to short-term memory
         self.short_term.add_message("user", user_query)
         self.short_term.add_message("assistant", answer)
 
         # Commit to episodic memory
+        self.logger.log_stage("committing_episodic", {"event_count": 2})
         await self.episodic.add_event(
             session_id=session_id,
             role="user",
@@ -78,13 +142,19 @@ class AgenticOrchestrator:
         )
 
         # Detect and store any facts from the user query
+        self.logger.log_stage("fact_detection", {"query_length": len(user_query)})
         await self._detect_and_store_facts(user_query, answer, session_id)
+
+        summary = self.logger.get_summary()
+        summary["answer_length"] = len(answer)
+        summary["sources"] = memories.get("sources", [])
 
         return {
             "answer": answer,
             "sources": memories.get("sources", []),
             "memories": memories.get("retrieved", {}),
             "session_id": session_id,
+            "timing": summary,
         }
 
     async def _gather_memories(
@@ -137,14 +207,16 @@ class AgenticOrchestrator:
         Returns:
             List of relevant facts
         """
+        query_lower = query.lower()
+
         # For location-based queries, return all location facts
-        if "where" in query.lower() or "location" in query.lower():
+        if "where" in query_lower or "location" in query_lower:
             facts = await self.semantic.get_facts_by_category("location")
             if facts:
                 return facts
 
         # For birthday queries
-        if "birthday" in query.lower():
+        if "birthday" in query_lower:
             facts = await self.semantic.get_facts_by_category("user")
             if facts:
                 # Filter for birthday-related facts
@@ -152,15 +224,38 @@ class AgenticOrchestrator:
                 if birthday_facts:
                     return birthday_facts
 
-        # For other queries, look up specific facts
-        if "name" in query.lower():
+        # For name-related queries (check for both "name" and "user name")
+        if "name" in query_lower:
             name = await self.semantic.get_user_name()
             if name:
-                return [{"key": "user_name", "value": name}]
-        elif "tech" in query.lower() or "stack" in query.lower():
+                return [{"key": "name", "value": name}]
+
+        # For tech stack queries
+        if "tech" in query_lower or "stack" in query_lower or "technology" in query_lower:
             stack = await self.semantic.get_tech_stack()
             if stack:
                 return [{"key": "tech_stack", "value": stack}]
+
+        # For communication style queries
+        if "communication" in query_lower or "style" in query_lower or "talk" in query_lower:
+            comm_style = await self.semantic.get_communication_style()
+            if comm_style:
+                return [{"key": "communication_style", "value": comm_style}]
+
+        # For general fact queries, return all facts
+        if "fact" in query_lower or "who" in query_lower or "what" in query_lower:
+            all_facts = await self.semantic.get_all_facts()
+            if all_facts:
+                return all_facts
+
+        # For name-related queries without explicit keywords, check all facts
+        if "name" in query_lower:
+            all_facts = await self.semantic.get_all_facts()
+            if all_facts:
+                # Filter for name-related facts
+                name_facts = [f for f in all_facts if "name" in f.get("key", "").lower()]
+                if name_facts:
+                    return name_facts
 
         return []
 
@@ -176,7 +271,9 @@ class AgenticOrchestrator:
         Returns:
             List of relevant events
         """
-        filters = {"session_id": session_id} if session_id else None
+        # Don't filter by session_id for general queries - we want all relevant memories
+        # Only filter by session_id if explicitly provided
+        filters = None
         events = await self.episodic.vector_search(query, filters)
         return events
 
@@ -189,9 +286,32 @@ class AgenticOrchestrator:
         Returns:
             Time tracking data
         """
-        # For now, return recent tasks
-        tasks = await self.tasks.list_tasks(limit=5)
-        return {"recent_tasks": tasks}
+        from datetime import datetime, timedelta
+
+        # Get current date and time in the local timezone (America/New_York)
+        current_time = datetime.now(timezone.utc)
+        current_date_str = current_time.strftime("%B %d, %Y at %I:%M %p")
+        
+        # Get current day of week
+        day_of_week = current_time.strftime("%A")
+        
+        # Get tasks - including upcoming ones
+        tasks = await self.tasks.list_tasks(limit=20)
+        
+        # Filter for upcoming tasks (due within next 7 days)
+        tomorrow = current_time + timedelta(days=1)
+        upcoming_tasks = [
+            t for t in tasks 
+            if t.get("due_date") and t.get("due_date") <= tomorrow
+        ]
+        
+        return {
+            "recent_tasks": tasks[:5],
+            "upcoming_tasks": upcoming_tasks,
+            "current_date": current_date_str,
+            "current_day": day_of_week,
+            "current_timestamp": current_time.isoformat()
+        }
 
     async def _build_system_prompt(self, memories: Dict) -> str:
         """Build a system prompt using user preferences and memories.
@@ -233,8 +353,13 @@ class AgenticOrchestrator:
                     memory_context.append(f"- {role}: {content[:100]}...")
 
         if memories.get("retrieved", {}).get("time"):
-            memory_context.append("\nTime Tracking:")
-            for task in memories["retrieved"]["time"].get("recent_tasks", []):
+            time_data = memories["retrieved"]["time"]
+            memory_context.append("\n=== CURRENT DATE AND TIME ===")
+            memory_context.append(f"Today is {time_data.get('current_day', '')}, {time_data.get('current_date', '')}")
+            memory_context.append(f"(Timestamp: {time_data.get('current_timestamp', '')})")
+            memory_context.append("")
+            memory_context.append("Time Tracking:")
+            for task in time_data.get("recent_tasks", []):
                 memory_context.append(f"- Task: {task.get('title', '')}")
 
         if memory_context:
@@ -263,6 +388,14 @@ class AgenticOrchestrator:
             {"role": "system", "content": system_prompt},
         ]
 
+        # Add current date/time as a dedicated system message if time data is available
+        if memories.get("retrieved", {}).get("time"):
+            time_data = memories["retrieved"]["time"]
+            current_day = time_data.get("current_day", "")
+            current_date = time_data.get("current_date", "")
+            date_message = f"IMPORTANT: The current date and time is {current_day}, {current_date}. Always use this date when answering questions about today, now, or the current time."
+            messages.append({"role": "system", "content": date_message})
+
         # Add conversation history from short-term memory
         for msg in self.short_term.get_recent_messages(5):
             messages.append(msg)
@@ -275,7 +408,7 @@ class AgenticOrchestrator:
         intent_str += f"\nReasoning: {intent.get('reasoning', 'N/A')}"
         messages.append({"role": "system", "content": intent_str})
 
-        response = await self.llm.generate(messages, temperature=0.7, max_tokens=1000)
+        response = await self.llm.generate(messages, temperature=0, max_tokens=None)
         return response or "I'm not sure how to answer that."
 
     async def update_user_preference(self, key: str, value: str) -> str:
@@ -372,7 +505,7 @@ Examples:
         ]
 
         try:
-            response = await self.llm.generate(messages, temperature=0.1, max_tokens=500)
+            response = await self.llm.generate(messages, temperature=0, max_tokens=None)
 
             if response:
                 import json

@@ -29,7 +29,7 @@ class SemanticMemory:
             value: Fact value
             confidence: Confidence score (0-1)
             metadata: Additional context
-            increment_version: If True and key exists, increment version; if False, always create new version
+            increment_version: If True and key exists, increment version and archive old; if False, always create new version
 
         Returns:
             The created fact's ObjectId as string
@@ -38,7 +38,13 @@ class SemanticMemory:
         existing = await self.get_fact(key)
         
         if existing and increment_version:
-            # Increment version and create new fact with incremented version
+            # Mark the current version as archived
+            await self.collection.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {"archived": True, "archived_at": datetime.now(timezone.utc)}}
+            )
+            
+            # Create new version with incremented version number
             new_version = existing.get("version", 1) + 1
             fact_doc = FactSchema.create(
                 category=category,
@@ -207,12 +213,12 @@ class SemanticMemory:
         return facts
 
     async def get_all_facts(self) -> List[Dict]:
-        """Get all facts.
+        """Get all non-archived facts.
 
         Returns:
-            List of all fact documents
+            List of all non-archived fact documents
         """
-        cursor = self.collection.find({})
+        cursor = self.collection.find({"archived": {"$ne": True}})
         facts = await cursor.to_list(length=None)
         return facts
 
@@ -222,8 +228,22 @@ class SemanticMemory:
         Returns:
             User name or None if not stored
         """
+        # Try to get name from user category first
         fact = await self.get_fact("user_name", category="user")
-        return fact.get("value") if fact else None
+        if fact:
+            return fact.get("value")
+        
+        # Try to get name from persona category
+        fact = await self.get_fact("name", category="persona")
+        if fact:
+            return fact.get("value")
+        
+        # Try to get name from user category (just "name" key)
+        fact = await self.get_fact("name", category="user")
+        if fact:
+            return fact.get("value")
+        
+        return None
 
     async def get_user_preferences(self) -> Dict[str, str]:
         """Get all user preferences as a dictionary.

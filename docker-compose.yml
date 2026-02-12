@@ -1,0 +1,30 @@
+# Pensive API Docker Compose Configuration
+
+services:
+  pensive-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URI=${MONGODB_URI}
+      - LLM_URI=${LLM_URI:-http://localhost:8080}
+      - LLM_EMBEDDING_URI=${LLM_EMBEDDING_URI:-http://localhost:1234/v1}
+      - LLM_MODEL=${LLM_MODEL:-default-model}
+      - LLM_EMBEDDING_MODEL=${LLM_EMBEDDING_MODEL:-default-embedding}
+      - EMBEDDING_DIMENSIONS=${EMBEDDING_DIMENSIONS:-1024}
+      - SHORT_TERM_MEMORY_SIZE=${SHORT_TERM_MEMORY_SIZE:-10}
+      - EPISODIC_MEMORY_LIMIT=${EPISODIC_MEMORY_LIMIT:-100}
+      - VECTOR_SEARCH_LIMIT=${VECTOR_SEARCH_LIMIT:-5}
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

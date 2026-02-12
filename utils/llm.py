@@ -1,6 +1,7 @@
 # LLM and Embedding utilities
 """LLM and embedding model utilities."""
 import httpx
+import time
 from typing import List, Dict, Any, Optional
 from memory_system.config import Config
 
@@ -19,6 +20,8 @@ class LLMClient:
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 1000,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
     ) -> Optional[str]:
         """Generate a response from the LLM.
 
@@ -27,10 +30,13 @@ class LLMClient:
             system_prompt: Optional system prompt to set context
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
+            tokens_in: Number of input tokens (for TPS calculation)
+            tokens_out: Number of output tokens (for TPS calculation)
 
         Returns:
             Generated response string or None if error
         """
+        start_time = time.time()
         try:
             payload = {
                 "model": self.model,
@@ -50,10 +56,20 @@ class LLMClient:
             response.raise_for_status()
 
             result = response.json()
-            return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            elapsed = time.time() - start_time
+
+            # Calculate tokens per second
+            total_tokens = tokens_in + tokens_out
+            tps = round(total_tokens / elapsed, 2) if elapsed > 0 else 0
+
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            print(f"[LLM] elapsed={elapsed:.3f}s | tps={tps} | tokens_in={tokens_in} | tokens_out={tokens_out}")
+            
+            return content
 
         except Exception as e:
-            print(f"Error generating LLM response: {e}")
+            elapsed = time.time() - start_time
+            print(f"[LLM] error elapsed={elapsed:.3f}s | {e}")
             return None
 
     async def close(self):
@@ -67,6 +83,7 @@ class EmbeddingClient:
     def __init__(self):
         self.base_url = Config.LLM_EMBEDDING_URI
         self.model = Config.LLM_EMBEDDING_MODEL
+        self.dimensions = Config.EMBEDDING_DIMENSIONS
         self._client = httpx.AsyncClient(timeout=60.0)
 
     async def generate_embedding(self, text: str) -> Optional[List[float]]:
@@ -92,7 +109,14 @@ class EmbeddingClient:
             response.raise_for_status()
 
             result = response.json()
-            return result.get("data", [{}])[0].get("embedding", [])
+            embedding = result.get("data", [{}])[0].get("embedding", [])
+
+            # Validate embedding dimensions
+            if embedding and len(embedding) == self.dimensions:
+                return embedding
+
+            print(f"Warning: Embedding has {len(embedding)} dims, expected {self.dimensions}")
+            return None
 
         except Exception as e:
             print(f"Error generating embedding: {e}")

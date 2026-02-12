@@ -10,7 +10,7 @@ class EpisodicMemory:
 
     def __init__(self):
         self.collection: AsyncIOMotorCollection = db.get_collection(COLLECTION_EPISODIC)
-        self.dimensions = 768  # text-embedding-nomic-embed-text-v1.5 embedding model dimensions
+        self.dimensions = Config.EMBEDDING_DIMENSIONS  # Configurable embedding dimensions
         self.vector_limit = Config.VECTOR_SEARCH_LIMIT
         self._embedding_client = None
 

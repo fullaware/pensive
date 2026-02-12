@@ -11,32 +11,46 @@ An AI agent system with multiple memory types (Short-Term, Episodic, Semantic) i
 - **Query Router**: AI-powered query intention detection
 - **System Prompts**: Dynamic prompt management with user preferences
 - **Pushover Notifications**: Alert system for important events
+- **REST API**: OpenAI-compatible API for integration with tools like OpenWebUI
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  userQuery[User Query] --> aiIntention["AI: What is this user's intentions based on what we know, generate a new query to run against our various tools that would satisfy the request."]
-  aiIntention --> toolQuery[Generated query to tools]
+  userQuery[User Query] --> router[Query Router: LLM Intent Detection]
+  router --> routeDecision{Intent Type?}
 
-  subgraph tools [Memory tools]
-    shortTermMemory[Short-Term Memory: Session History, recall from previous conversations]
-    episodicRecall[Episodic Memory: Past events, summarize and save, recall via Vector Search]
-    semanticRecall[Semantic Memory: Facts and knowledge, save and recall exact information e.g. USER lives in a house under a bridge]
+  routeDecision -->|fact| semantic[Semantic Memory: Query Facts]
+  routeDecision -->|location| semantic
+  routeDecision -->|task| episodic[Episodic Memory: Vector Search]
+  routeDecision -->|time| episodic
+  routeDecision -->|conversation| shortTerm[Short-Term Memory: Session History]
+  routeDecision -->|other| allMemories[All Memory Systems]
+
+  semantic --> queryResults[Retrieved Memories]
+  episodic --> queryResults
+  shortTerm --> queryResults
+
+  queryResults --> systemPrompt[Build System Prompt]
+  systemPrompt --> llm[LLM Generation]
+  llm --> response[Response]
+
+  response --> shortTermMem[Update Short-Term Memory]
+  shortTermMem --> commitEpisodic[Commit to Episodic Memory]
+  commitEpisodic --> commitSemantic[Commit to Semantic Memory]
+  commitSemantic --> finalResponse[Return Response]
+
+  subgraph memorySystems [Memory Systems]
+    semantic
+    episodic
+    shortTerm
   end
 
-  toolQuery --> shortTermMemory
-  toolQuery --> episodicRecall
-  toolQuery --> semanticRecall
-
-  shortTermMemory --> combinedResults[Combined results]
-  episodicRecall --> combinedResults
-  semanticRecall --> combinedResults
-
-  combinedResults --> presentToUser[Present to user]
-
-  presentToUser --> commitEpisodic[Commit summary to Episodic Memory]
-  presentToUser --> commitSemantic[Commit summary to Semantic Memory]
+  subgraph llmFlow [LLM Processing Flow]
+    router
+    systemPrompt
+    llm
+  end
 ```
 
 ## Requirements
@@ -79,14 +93,17 @@ MONGODB_DB=agentic_memory
 LLM_URI=http://10.28.28.15:8080
 LLM_EMBEDDING_URI=http://10.28.28.15:1234/v1
 LLM_MODEL=Qwen/Qwen3-Coder-Next-GGUF:Q4_K_M
-LLM_EMBEDDING_MODEL=voyage-4-nano@f16
+LLM_EMBEDDING_MODEL=text-embedding-qwen3-embedding-8b
+EMBEDDING_DIMENSIONS=1024
 
 # Memory Configuration
 SHORT_TERM_MEMORY_SIZE=10
 EPISODIC_MEMORY_LIMIT=100
 VECTOR_SEARCH_LIMIT=5
 
-# Embedding Model Configuration (1024 dimensions for voyage-4-nano)
+# Embedding Model Configuration
+# Set EMBEDDING_DIMENSIONS to match your embedding model output
+# text-embedding-qwen3-embedding-8b returns 1024 dimensions
 
 # Pushover Configuration
 PUSHOVER_TOKEN=your_pushover_token
@@ -101,22 +118,74 @@ PUSHOVER_USER=your_pushover_user
 python main.py
 ```
 
-### Programmatic Usage
+### REST API Mode
 
-```python
-import asyncio
-from agent import AgenticOrchestrator
+Start the API server:
 
-async def main():
-    orchestrator = AgenticOrchestrator()
-    
-    result = await orchestrator.process_query("What is my name?")
-    print(result["answer"])
-    
-    await orchestrator.close()
+```bash
+# Activate virtual environment
+source venv/bin/activate
 
-asyncio.run(main())
+# Start the API server
+uvicorn api.routes:app --host 0.0.0.0 --port 8000
 ```
+
+Or use Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+The API will be available at `http://localhost:8000`.
+
+#### OpenAI-Compatible Endpoints
+
+The API provides OpenAI-compatible endpoints:
+
+- `GET /v1/models` - List available models
+- `POST /v1/chat/completions` - Chat completions
+- `POST /v1/embeddings` - Generate embeddings
+
+#### Custom Endpoints
+
+- `GET /health` - Health check
+- `POST /api/v1/query` - Custom query
+- `GET /api/v1/facts` - List facts
+- `POST /api/v1/facts` - Create fact
+- `GET /api/v1/facts/{key}` - Get fact
+- `DELETE /api/v1/facts/{key}` - Delete fact
+- `GET /api/v1/tasks` - List tasks
+- `POST /api/v1/tasks` - Create task
+- `GET /api/v1/tasks/{task_id}` - Get task
+- `DELETE /api/v1/tasks/{task_id}` - Delete task
+- `GET /api/v1/memories/episodic` - List episodic memories
+- `POST /api/v1/memories/episodic` - Add episodic memory
+
+#### Example API Usage
+
+```bash
+# Chat completions (OpenAI-compatible)
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "pensive",
+    "messages": [{"role": "user", "content": "What is my name?"}]
+  }'
+
+# Health check
+curl http://localhost:8000/health
+```
+
+#### OpenWebUI Integration
+
+To use with OpenWebUI:
+
+1. Start the Pensive API server
+2. In OpenWebUI, go to Settings > Models
+3. Add a new model with:
+   - Model Name: `pensive`
+   - API Base URL: `http://localhost:8000/v1`
+   - API Key: (optional, leave empty if not using auth)
 
 ## Project Structure
 
@@ -205,6 +274,20 @@ pytest tests/test_config.py
 # Run with verbose output
 pytest -v
 ```
+
+## Vector Index Management
+
+If you change the `EMBEDDING_DIMENSIONS` configuration, you need to recreate the vector indexes:
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Recreate vector indexes
+python scripts/recreate_index.py
+```
+
+This will delete existing vector indexes and create new ones with the correct dimensions.
 
 ## License
 
