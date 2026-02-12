@@ -40,9 +40,9 @@ flowchart TD
   shortTermMem --> commitEpisodic[Commit to Episodic Memory]
   commitEpisodic --> commitSemantic[Commit to Semantic Memory]
 
-  style userReturn fill:#9ed6ac,stroke:#333
-  style commitEpisodic fill:#9ec8d6,stroke:#333
-  style commitSemantic fill:#9ec8d6,stroke:#333
+  style userReturn fill:#9ed6ac,stroke:#333, color:#000
+  style commitEpisodic fill:#9ec8d6,stroke:#333, color:#000
+  style commitSemantic fill:#9ec8d6,stroke:#333, color:#000
 ```
 
 ## Requirements
