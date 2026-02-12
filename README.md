@@ -35,10 +35,11 @@ flowchart LR
   systemPrompt --> llm[LLM Generation]
   llm --> response[Response]
 
+  response --> userReturn[Return Response to User]
+  
   response --> shortTermMem[Update Short-Term Memory]
-  shortTermMem --> commitEpisodic[Commit to Episodic Memory]
-  commitEpisodic --> commitSemantic[Commit to Semantic Memory]
-  commitSemantic --> finalResponse[Return Response]
+  shortTermMem --> commitEpisodic[Commit to Episodic Memory (Background)]
+  commitEpisodic --> commitSemantic[Commit to Semantic Memory (Background)]
 
   subgraph memorySystems [Memory Systems]
     semantic
@@ -50,6 +51,10 @@ flowchart LR
     systemPrompt
     llm
   end
+
+  style commitEpisodic fill:#ffe4b6,stroke:#333
+  style commitSemantic fill:#ffe4b6,stroke:#333
+  style userReturn fill:#d4edda,stroke:#333
 ```
 
 ## Requirements

@@ -3,6 +3,7 @@
 from typing import List, Dict, Optional
 from datetime import datetime, timezone
 import time
+import asyncio
 
 from memory_system import (
     ShortTermMemory,
@@ -128,22 +129,13 @@ class AgenticOrchestrator:
         self.short_term.add_message("user", user_query)
         self.short_term.add_message("assistant", answer)
 
-        # Commit to episodic memory
+        # Commit to episodic memory (background task - doesn't block response)
         self.logger.log_stage("committing_episodic", {"event_count": 2})
-        await self.episodic.add_event(
-            session_id=session_id,
-            role="user",
-            content=user_query,
-        )
-        await self.episodic.add_event(
-            session_id=session_id,
-            role="assistant",
-            content=answer,
-        )
+        asyncio.create_task(self._commit_to_episodic_background(session_id, user_query, answer))
 
-        # Detect and store any facts from the user query
+        # Detect and store any facts from the user query (background task - doesn't block response)
         self.logger.log_stage("fact_detection", {"query_length": len(user_query)})
-        await self._detect_and_store_facts(user_query, answer, session_id)
+        asyncio.create_task(self._detect_and_store_facts_background(user_query, answer))
 
         summary = self.logger.get_summary()
         summary["answer_length"] = len(answer)
@@ -156,6 +148,32 @@ class AgenticOrchestrator:
             "session_id": session_id,
             "timing": summary,
         }
+
+    async def _commit_to_episodic_background(self, session_id: str, user_query: str, answer: str) -> None:
+        """Commit events to episodic memory in the background (non-blocking)."""
+        try:
+            await self.episodic.add_event(
+                session_id=session_id,
+                role="user",
+                content=user_query,
+            )
+            await self.episodic.add_event(
+                session_id=session_id,
+                role="assistant",
+                content=answer,
+            )
+        except Exception as e:
+            print(f"Error committing to episodic memory: {e}")
+
+    async def _detect_and_store_facts_background(self, user_query: str, answer: str) -> None:
+        """Detect and store facts in the background (non-blocking)."""
+        try:
+            # Generate a session ID for fact detection
+            from datetime import datetime
+            session_id = f"session_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            await self._detect_and_store_facts(user_query, answer, session_id)
+        except Exception as e:
+            print(f"Error detecting/storing facts: {e}")
 
     async def _gather_memories(
         self, routing: Dict, user_query: str, session_id: str
