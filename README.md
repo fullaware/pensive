@@ -27,17 +27,18 @@ An AI agent system with multiple memory types (Short-Term, Episodic, Semantic) i
 
 ```mermaid
 flowchart LR
-  userQuery[User Query] --> router[Query Router]
-  router --> allMemories[All Memory Systems]
-  allMemories --> queryResults[Retrieved Memories]
-  queryResults --> systemPrompt[Build System Prompt]
+  userQuery[User Query] --> router[Query Router: Determine Intent]
+  router --> allMemories[All Memory Systems: short_term, episodic, semantic]
+
+  allMemories --> queryResults[Retrieved Memories from All Systems]
+  queryResults --> systemPrompt[Build System Prompt with Retrieved Memories]
   systemPrompt --> llm[LLM Generation]
-  llm --> response[Response]
+  llm --> response[Response Generated]
 
   response --> userReturn[Return Response to User]
   response --> shortTermMem[Update Short-Term Memory]
-  shortTermMem --> commitEpisodic[Commit to Episodic Memory]
-  commitEpisodic --> commitSemantic[Commit to Semantic Memory]
+  shortTermMem --> commitEpisodic[Commit to Episodic Memory (Background)]
+  commitEpisodic --> commitSemantic[Commit to Semantic Memory (Background)]
 
   style userReturn fill:#d4edda,stroke:#333
   style commitEpisodic fill:#ffe4b6,stroke:#333
