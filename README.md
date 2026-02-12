@@ -26,7 +26,7 @@ An AI agent system with multiple memory types (Short-Term, Episodic, Semantic) i
 ## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TD
   userQuery[User Query] --> router[Query Router: Determine Intent]
   router --> allMemories[All Memory Systems: short_term, episodic, semantic]
 
