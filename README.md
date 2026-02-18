@@ -45,12 +45,42 @@ flowchart TD
   style commitSemantic fill:#9ec8d6,stroke:#333, color:#000
 ```
 
+## Environment
+
+This system is built and runs on the following hardware and software configuration:
+
+### Hardware
+
+| Component | Specification |
+|-----------|---------------|
+| **Machine** | 2025 Apple Mac Studio M3 Ultra |
+| **CPU** | 28 cores (20 Performance + 8 Efficiency) |
+| **GPU** | 60 GPU Cores @ 819.3 GB/s memory bandwidth |
+| **RAM** | 96GB Unified Memory |
+
+### Software Stack
+
+| Component | Version/Details |
+|-----------|-----------------|
+| **Python** | 3.13 |
+| **MongoDB** | 8.2.4 with Vector Search |
+| **LLM Inference** | llama.cpp server (build 7990) |
+| **LLM Model** | Qwen/Qwen3-Coder-Next-GGUF:Q4_K_M |
+| **Embedding Model** | jsonMartin/voyage-4-nano-gguf |
+
+### Performance Considerations
+
+- The M3 Ultra's 96GB unified memory allows for efficient handling of large models and embeddings without swapping
+- The 819.3 GB/s memory bandwidth enables fast data transfers between CPU, GPU, and neural engine
+- Vector search in MongoDB leverages the high memory bandwidth for fast similarity searches
+- llama.cpp's quantized models (Q4_K_M) provide a good balance between inference speed and model quality on Apple Silicon
+
 ## Requirements
 
 - Python 3.13+
 - MongoDB with Vector Search capabilities
-- LLM API endpoint (e.g., Ollama, LM Studio)
-- Embedding model endpoint
+- Any OpenAI API-compatible endpoint (Ollama, LM Studio, llama.cpp, etc.)
+
 
 ## Installation
 
@@ -83,9 +113,9 @@ MONGODB_DB=agentic_memory
 
 # LLM Configuration
 LLM_URI=http://10.28.28.15:8080
-LLM_EMBEDDING_URI=http://10.28.28.15:1234/v1
+LLM_EMBEDDING_URI=http://10.28.28.15:8080
 LLM_MODEL=Qwen/Qwen3-Coder-Next-GGUF:Q4_K_M
-LLM_EMBEDDING_MODEL=text-embedding-qwen3-embedding-8b
+LLM_EMBEDDING_MODEL=jsonMartin/voyage-4-nano-gguf
 EMBEDDING_DIMENSIONS=1024
 
 # Memory Configuration
