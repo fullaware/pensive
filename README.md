@@ -317,6 +317,25 @@ pytest tests/test_config.py
 pytest -v
 ```
 
+### Example Docker Logs Output
+
+```log
+pensive-api-1  | [intent_detection] elapsed=0.000s | {'query_length': 40}
+pensive-api-1  | [LLM] elapsed=2.312s | tps=0.0 | tokens_in=0 | tokens_out=0
+pensive-api-1  | [intent_complete] elapsed=2.313s | {'intent': 'task'}
+pensive-api-1  | [memory_gathering] elapsed=2.313s | {'memory_systems': ['short_term', 'episodic', 'semantic']}
+pensive-api-1  | [memory_complete] elapsed=2.445s | {'sources': ['semantic memory', 'short-term memory', 'episodic memory']}
+pensive-api-1  | [prompt_building] elapsed=2.445s | {'memories_count': 3}
+pensive-api-1  | [prompt_complete] elapsed=2.447s | {'prompt_length': 1059}
+pensive-api-1  | [llm_generation] elapsed=2.447s | {'prompt_length': 1059}
+pensive-api-1  | [LLM] elapsed=2.364s | tps=0.0 | tokens_in=0 | tokens_out=0
+pensive-api-1  | [llm_complete] elapsed=4.812s | {'response_length': 240}
+pensive-api-1  | [committing_episodic] elapsed=4.812s | {'event_count': 2}
+pensive-api-1  | [fact_detection] elapsed=4.812s | {'query_length': 40}
+pensive-api-1  | INFO:     172.19.0.1:65438 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+pensive-api-1  | [LLM] elapsed=0.806s | tps=0.0 | tokens_in=0 | tokens_out=0
+```
+
 ## Vector Index Management
 
 If you change the `EMBEDDING_DIMENSIONS` configuration, you need to recreate the vector indexes:
