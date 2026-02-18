@@ -29,8 +29,8 @@ An AI agent system with multiple memory types (Short-Term, Episodic, Semantic) i
 flowchart TD
   userQuery[User Query] --> router[Query Router: Determine Intent]
   router --> shortTerm[Short-Term Memory]
-  router --> episodic[Episodic Memory: Vector Search]
-  router --> semantic[Semantic Memory: MongoDB]
+  router --> episodic[Episodic Memory: Vector Search on MongoDB]
+  router --> semantic[Semantic Memory: Vector Search on MongoDB]
 
   shortTerm --> shortTermRead[Read: Session Context]
   episodic --> episodicRead[Read: Similar Events]
@@ -45,15 +45,15 @@ flowchart TD
   llm --> response[Response Generated]
 
   response --> userReturn[Return Response to User]
-  response --> shortTermWrite[Update Short-Term Memory]
-  shortTermWrite --> shortTermDb[(MongoDB)]
+  response --> shortTermMem[Update Short-Term Context (in-memory)]
   
   response --> commitEpisodic[Commit to Episodic Memory]
   commitEpisodic --> episodicEmbed[Generate Embedding]
   episodicEmbed --> episodicDb[(MongoDB)]
   
   response --> commitSemantic[Commit to Semantic Memory]
-  commitSemantic --> semanticDb[(MongoDB)]
+  commitSemantic --> semanticEmbed[Generate Embedding]
+  semanticEmbed --> semanticDb[(MongoDB)]
 
   style userReturn fill:#9ed6ac,stroke:#333, color:#000
   style shortTermDb fill:#9ed6ac,stroke:#333, color:#000
