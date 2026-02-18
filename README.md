@@ -48,15 +48,14 @@ flowchart TD
   
   response --> commitEpisodic[Commit to Episodic Memory]
   commitEpisodic --> episodicEmbed[Generate Embedding]
-  episodicEmbed --> episodicDb[(MongoDB)]
+  episodicEmbed --> mongoDb[(MongoDB)]
   
   response --> commitSemantic[Commit to Semantic Memory]
   commitSemantic --> semanticEmbed[Generate Embedding]
-  semanticEmbed --> semanticDb[(MongoDB)]
+  semanticEmbed --> mongoDb
 
   style userReturn fill:#9ed6ac,stroke:#333, color:#000
-  style episodicDb fill:#9ed6ac,stroke:#333, color:#000
-  style semanticDb fill:#9ed6ac,stroke:#333, color:#000
+  style mongoDb fill:#9ed6ac,stroke:#333, color:#000
   style commitEpisodic fill:#9ec8d6,stroke:#333, color:#000
   style commitSemantic fill:#9ec8d6,stroke:#333, color:#000
 ```
