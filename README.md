@@ -28,19 +28,37 @@ An AI agent system with multiple memory types (Short-Term, Episodic, Semantic) i
 ```mermaid
 flowchart TD
   userQuery[User Query] --> router[Query Router: Determine Intent]
-  router --> allMemories[All Memory Systems: short_term, episodic, semantic]
+  router --> shortTerm[Short-Term Memory]
+  router --> episodic[Episodic Memory: Vector Search]
+  router --> semantic[Semantic Memory: MongoDB]
 
-  allMemories --> queryResults[Retrieved Memories from All Systems]
+  shortTerm --> shortTermRead[Read: Session Context]
+  episodic --> episodicRead[Read: Similar Events]
+  semantic --> semanticRead[Read: Facts & Knowledge]
+
+  shortTermRead --> queryResults[Retrieved Memories from All Systems]
+  episodicRead --> queryResults
+  semanticRead --> queryResults
+
   queryResults --> systemPrompt[Build System Prompt with Retrieved Memories]
   systemPrompt --> llm[LLM Generation]
   llm --> response[Response Generated]
 
   response --> userReturn[Return Response to User]
-  response --> shortTermMem[Update Short-Term Memory]
-  shortTermMem --> commitEpisodic[Commit to Episodic Memory]
-  commitEpisodic --> commitSemantic[Commit to Semantic Memory]
+  response --> shortTermWrite[Update Short-Term Memory]
+  shortTermWrite --> shortTermDb[(MongoDB)]
+  
+  response --> commitEpisodic[Commit to Episodic Memory]
+  commitEpisodic --> episodicEmbed[Generate Embedding]
+  episodicEmbed --> episodicDb[(MongoDB)]
+  
+  response --> commitSemantic[Commit to Semantic Memory]
+  commitSemantic --> semanticDb[(MongoDB)]
 
   style userReturn fill:#9ed6ac,stroke:#333, color:#000
+  style shortTermDb fill:#e6b800,stroke:#333, color:#000
+  style episodicDb fill:#e6b800,stroke:#333, color:#000
+  style semanticDb fill:#e6b800,stroke:#333, color:#000
   style commitEpisodic fill:#9ec8d6,stroke:#333, color:#000
   style commitSemantic fill:#9ec8d6,stroke:#333, color:#000
 ```
