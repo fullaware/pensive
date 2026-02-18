@@ -45,7 +45,7 @@ flowchart TD
   llm --> response[Response Generated]
 
   response --> userReturn[Return Response to User]
-  response --> shortTermMem[Update Short-Term Context (in-memory)]
+  response --> shortTermMem[Update Short-Term Context in-memory]
   
   response --> commitEpisodic[Commit to Episodic Memory]
   commitEpisodic --> episodicEmbed[Generate Embedding]
