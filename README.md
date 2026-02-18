@@ -56,9 +56,9 @@ flowchart TD
   commitSemantic --> semanticDb[(MongoDB)]
 
   style userReturn fill:#9ed6ac,stroke:#333, color:#000
-  style shortTermDb fill:#e6b800,stroke:#333, color:#000
-  style episodicDb fill:#e6b800,stroke:#333, color:#000
-  style semanticDb fill:#e6b800,stroke:#333, color:#000
+  style shortTermDb fill:#9ed6ac,stroke:#333, color:#000
+  style episodicDb fill:#9ed6ac,stroke:#333, color:#000
+  style semanticDb fill:#9ed6ac,stroke:#333, color:#000
   style commitEpisodic fill:#9ec8d6,stroke:#333, color:#000
   style commitSemantic fill:#9ec8d6,stroke:#333, color:#000
 ```
