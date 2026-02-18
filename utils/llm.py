@@ -109,17 +109,49 @@ class EmbeddingClient:
             response.raise_for_status()
 
             result = response.json()
-            embedding = result.get("data", [{}])[0].get("embedding", [])
 
-            # Validate embedding dimensions
-            if embedding and len(embedding) == self.dimensions:
-                return embedding
+            # Handle different response formats
+            embedding = None
 
-            print(f"Warning: Embedding has {len(embedding)} dims, expected {self.dimensions}")
+            # Format 1: OpenAI-compatible {"data": [{"embedding": [...]}}]
+            if isinstance(result, dict):
+                data = result.get("data")
+                if isinstance(data, list) and len(data) > 0:
+                    if isinstance(data[0], dict):
+                        embedding = data[0].get("embedding")
+                    elif isinstance(data[0], list):
+                        # Data is a list of lists (embedding directly)
+                        embedding = data[0]
+            elif isinstance(result, list):
+                # Result is a list - check for dict with embedding
+                if len(result) > 0 and isinstance(result[0], dict):
+                    # vLLM format: [{'index': 0, 'embedding': [[...]]}]
+                    embedding_data = result[0].get('embedding')
+                    if isinstance(embedding_data, list) and len(embedding_data) > 0:
+                        # Handle both [[...]] and [...] formats
+                        if isinstance(embedding_data[0], list):
+                            # Nested list format - use first element
+                            embedding = embedding_data[0]
+                        else:
+                            # Direct list format
+                            embedding = embedding_data
+                if len(result) > 0 and isinstance(result[0], list):
+                    # Embedding might be the first element directly
+                    embedding = result[0]
+
+            # Validate embedding
+            if embedding:
+                if len(embedding) == self.dimensions:
+                    return embedding
+                print(f"Warning: Embedding has {len(embedding)} dims, expected {self.dimensions}")
+
+            print(f"Warning: Could not extract embedding from response: {type(result)}")
             return None
 
         except Exception as e:
             print(f"Error generating embedding: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
             return None
 
     async def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
