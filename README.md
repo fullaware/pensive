@@ -1,6 +1,17 @@
 # Pensive - Agentic Memory System
 
-An AI agent system with multiple memory types (Short-Term, Episodic, Semantic) inspired by the Rosston Agentic Memory System.
+An AI agent system with multiple memory types (Short-Term, Episodic, Semantic) inspired by the [Rosston Agentic Memory System](https://www.rosston.dev/blog/groundhog-day).
+
+## Background
+
+This system is based on the concepts described in Rosston Ritter's article [Beyond the Chatbot: Escaping the "Groundhog Day" Loop with Agentic Memory](https://www.rosston.dev/blog/groundhog-day), which outlines a memory architecture for AI agents that includes:
+
+- **Short-Term Memory**: Session history and conversation context (cached)
+- **Long-Term Memory**: Stored in MongoDB with two components:
+  - **Episodic Memory**: Past events with vector embeddings for similarity search
+  - **Semantic Memory**: Facts and knowledge with structured data storage
+
+The key insight from the article is that to move from forgetful chatbots to truly intelligent agents, we need an agent to "remember" across sessions. This is achieved through a **Consolidation Workflow** that moves critical context from short-term session history to long-term MongoDB storage.
 
 ## Features
 
