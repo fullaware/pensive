@@ -71,8 +71,20 @@ async def verify_mongodb() -> None:
 # Startup event
 @app.on_event("startup")
 async def startup_event():
-    """Initialize MongoDB connection on startup."""
+    """Initialize MongoDB connection, enable logging, create vector indexes, and verify status."""
     await MongoDB.connect()
+    
+    # Enable MongoDB query logging (embeddings will be masked)
+    MongoDB.enable_logging(True)
+    
+    # Create vector indexes for collections that need them
+    print("Creating vector indexes...")
+    await MongoDB.create_vector_index("facts")
+    await MongoDB.create_vector_index("episodic_memories")
+    
+    # Verify and log index status
+    print("\nVerifying vector indexes...")
+    await MongoDB.verify_indexes()
 
 
 # Shutdown event

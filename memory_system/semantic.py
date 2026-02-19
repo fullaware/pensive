@@ -4,6 +4,7 @@ from typing import List, Dict, Optional
 from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorCollection
 from memory_system import db, FactSchema, COLLECTION_FACTS, Config
+import time
 
 
 class SemanticMemory:
@@ -289,10 +290,31 @@ class SemanticMemory:
         """
         # Generate embedding for the query
         query_embedding = await self.embedding_client.generate_embedding(query)
+        
+        # Log the query (embedding will be masked by MongoDB.log_query)
+        start_time = time.time()
+        if db._logging_enabled:
+            await db.log_query(
+                COLLECTION_FACTS, 
+                "vectorSearch", 
+                {"query": query[:100] + "..." if len(query) > 100 else query},
+                {"limit": limit or self.vector_limit}
+            )
+        
         if not query_embedding:
             # Fall back to returning all non-archived facts
             cursor = self.collection.find({"archived": {"$ne": True}})
-            return await cursor.to_list(length=limit or self.vector_limit)
+            results = await cursor.to_list(length=limit or self.vector_limit)
+            duration_ms = (time.time() - start_time) * 1000
+            if db._logging_enabled:
+                await db.log_query(
+                    COLLECTION_FACTS, 
+                    "find", 
+                    {"archived": {"$ne": True}},
+                    {"count": len(results)},
+                    duration_ms
+                )
+            return results
 
         try:
             # Build aggregation pipeline for vector search
@@ -315,15 +337,41 @@ class SemanticMemory:
             cursor = self.collection.aggregate(pipeline)
             results = await cursor.to_list(length=limit or self.vector_limit)
             
+            duration_ms = (time.time() - start_time) * 1000
+            if db._logging_enabled:
+                await db.log_query(
+                    COLLECTION_FACTS, 
+                    "vectorSearch", 
+                    {"query": query[:100] + "..." if len(query) > 100 else query},
+                    {"results_count": len(results), "limit": limit or self.vector_limit},
+                    duration_ms
+                )
+            
             # If no results from vector search, fall back to all non-archived facts
             if not results:
                 cursor = self.collection.find({"archived": {"$ne": True}})
                 results = await cursor.to_list(length=limit or self.vector_limit)
+                if db._logging_enabled:
+                    await db.log_query(
+                        COLLECTION_FACTS, 
+                        "find_fallback", 
+                        {"archived": {"$ne": True}},
+                        {"count": len(results)},
+                        duration_ms
+                    )
             
             return results
         except Exception as e:
             # Vector search not available, return all non-archived facts
-            print(f"Vector search error: {e}")
+            duration_ms = (time.time() - start_time) * 1000
+            if db._logging_enabled:
+                await db.log_query(
+                    COLLECTION_FACTS, 
+                    "vectorSearch_error", 
+                    {"error": str(e)},
+                    {},
+                    duration_ms
+                )
             cursor = self.collection.find({"archived": {"$ne": True}})
             return await cursor.to_list(length=limit or self.vector_limit)
 

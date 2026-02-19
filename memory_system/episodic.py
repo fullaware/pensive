@@ -3,6 +3,7 @@
 from typing import List, Dict, Optional
 from motor.motor_asyncio import AsyncIOMotorCollection
 from memory_system import db, EpisodicMemorySchema, COLLECTION_EPISODIC, Config
+import time
 
 
 class EpisodicMemory:
@@ -56,7 +57,19 @@ class EpisodicMemory:
             event_type=event_type,
             context=context or {},
         )
+        
+        start_time = time.time()
         result = await self.collection.insert_one(event_doc)
+        
+        duration_ms = (time.time() - start_time) * 1000
+        if db._logging_enabled:
+            await db.log_query(
+                COLLECTION_EPISODIC, 
+                "insert_one", 
+                {"session_id": session_id, "role": role},
+                {"content_length": len(content)},
+                duration_ms
+            )
         return str(result.inserted_id)
 
     async def vector_search(
@@ -74,7 +87,27 @@ class EpisodicMemory:
         """
         # Generate embedding for the query
         query_embedding = await self.embedding_client.generate_embedding(query)
+        
+        # Log the query (embedding will be masked by MongoDB.log_query)
+        start_time = time.time()
+        if db._logging_enabled:
+            await db.log_query(
+                COLLECTION_EPISODIC, 
+                "vectorSearch", 
+                {"query": query[:100] + "..." if len(query) > 100 else query},
+                {"limit": limit or self.vector_limit}
+            )
+        
         if not query_embedding:
+            if db._logging_enabled:
+                duration_ms = (time.time() - start_time) * 1000
+                await db.log_query(
+                    COLLECTION_EPISODIC, 
+                    "vectorSearch", 
+                    {"query": query[:100] + "..." if len(query) > 100 else query},
+                    {"reason": "no_embedding", "count": 0},
+                    duration_ms
+                )
             return []
 
         try:
@@ -97,9 +130,27 @@ class EpisodicMemory:
 
             cursor = self.collection.aggregate(pipeline)
             results = await cursor.to_list(length=limit or self.vector_limit)
+            
+            duration_ms = (time.time() - start_time) * 1000
+            if db._logging_enabled:
+                await db.log_query(
+                    COLLECTION_EPISODIC, 
+                    "vectorSearch", 
+                    {"query": query[:100] + "..." if len(query) > 100 else query},
+                    {"results_count": len(results), "limit": limit or self.vector_limit},
+                    duration_ms
+                )
             return results
         except Exception as e:
-            # Vector search not available, return empty
+            duration_ms = (time.time() - start_time) * 1000
+            if db._logging_enabled:
+                await db.log_query(
+                    COLLECTION_EPISODIC, 
+                    "vectorSearch_error", 
+                    {"query": query[:100] + "..." if len(query) > 100 else query, "error": str(e)},
+                    {},
+                    duration_ms
+                )
             return []
 
     async def get_session_history(
@@ -114,12 +165,23 @@ class EpisodicMemory:
         Returns:
             List of message documents
         """
+        start_time = time.time()
         cursor = (
             self.collection.find({"session_id": session_id})
             .sort("timestamp", 1)
             .limit(limit)
         )
         history = await cursor.to_list(length=limit)
+        
+        duration_ms = (time.time() - start_time) * 1000
+        if db._logging_enabled:
+            await db.log_query(
+                COLLECTION_EPISODIC, 
+                "find", 
+                {"session_id": session_id, "limit": limit},
+                {"count": len(history)},
+                duration_ms
+            )
         return history
 
     async def get_recent_events(
@@ -138,12 +200,23 @@ class EpisodicMemory:
         if event_type:
             query["event_type"] = event_type
 
+        start_time = time.time()
         cursor = (
             self.collection.find(query)
             .sort("timestamp", -1)
             .limit(limit)
         )
         events = await cursor.to_list(length=limit)
+        
+        duration_ms = (time.time() - start_time) * 1000
+        if db._logging_enabled:
+            await db.log_query(
+                COLLECTION_EPISODIC, 
+                "find", 
+                query,
+                {"count": len(events), "limit": limit},
+                duration_ms
+            )
         return events
 
     async def delete_event(self, event_id: str) -> bool:
@@ -155,7 +228,18 @@ class EpisodicMemory:
         Returns:
             True if event was deleted, False otherwise
         """
+        start_time = time.time()
         result = await self.collection.delete_one({"_id": event_id})
+        
+        duration_ms = (time.time() - start_time) * 1000
+        if db._logging_enabled:
+            await db.log_query(
+                COLLECTION_EPISODIC, 
+                "delete_one", 
+                {"_id": event_id},
+                {"deleted_count": result.deleted_count},
+                duration_ms
+            )
         return result.deleted_count > 0
 
     async def clear_session(self, session_id: str) -> bool:
@@ -167,7 +251,18 @@ class EpisodicMemory:
         Returns:
             True if session was cleared, False otherwise
         """
+        start_time = time.time()
         result = await self.collection.delete_many({"session_id": session_id})
+        
+        duration_ms = (time.time() - start_time) * 1000
+        if db._logging_enabled:
+            await db.log_query(
+                COLLECTION_EPISODIC, 
+                "delete_many", 
+                {"session_id": session_id},
+                {"deleted_count": result.deleted_count},
+                duration_ms
+            )
         return result.deleted_count > 0
 
     async def close(self):
