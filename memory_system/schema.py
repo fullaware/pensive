@@ -74,7 +74,6 @@ class EpisodicMemorySchema:
 
     @staticmethod
     def create(
-        session_id: str,
         role: str,
         content: str,
         embedding: List[float],
@@ -84,7 +83,6 @@ class EpisodicMemorySchema:
         """Create a new episodic memory document."""
         return {
             "type": "episodic",
-            "session_id": session_id,
             "role": role,
             "content": content,
             "embedding": embedding,

@@ -131,7 +131,7 @@ class AgenticOrchestrator:
 
         # Commit to episodic memory (background task - doesn't block response)
         self.logger.log_stage("committing_episodic", {"event_count": 2})
-        asyncio.create_task(self._commit_to_episodic_background(session_id, user_query, answer))
+        asyncio.create_task(self._commit_to_episodic_background(user_query, answer))
 
         # Detect and store any facts from the user query (background task - doesn't block response)
         self.logger.log_stage("fact_detection", {"query_length": len(user_query)})
@@ -149,16 +149,14 @@ class AgenticOrchestrator:
             "timing": summary,
         }
 
-    async def _commit_to_episodic_background(self, session_id: str, user_query: str, answer: str) -> None:
+    async def _commit_to_episodic_background(self, user_query: str, answer: str) -> None:
         """Commit events to episodic memory in the background (non-blocking)."""
         try:
             await self.episodic.add_event(
-                session_id=session_id,
                 role="user",
                 content=user_query,
             )
             await self.episodic.add_event(
-                session_id=session_id,
                 role="assistant",
                 content=answer,
             )

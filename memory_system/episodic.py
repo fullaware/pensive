@@ -25,7 +25,6 @@ class EpisodicMemory:
 
     async def add_event(
         self,
-        session_id: str,
         role: str,
         content: str,
         event_type: str = "conversation",
@@ -34,7 +33,6 @@ class EpisodicMemory:
         """Add an event to episodic memory.
 
         Args:
-            session_id: Session identifier
             role: Event role (user, assistant, system)
             content: Event content
             event_type: Type of event
@@ -50,7 +48,6 @@ class EpisodicMemory:
             raise RuntimeError(f"Failed to generate embedding for content: {content[:100]}...")
 
         event_doc = EpisodicMemorySchema.create(
-            session_id=session_id,
             role=role,
             content=content,
             embedding=embedding,
@@ -66,7 +63,7 @@ class EpisodicMemory:
             await db.log_query(
                 COLLECTION_EPISODIC, 
                 "insert_one", 
-                {"session_id": session_id, "role": role},
+                {"role": role},
                 {"content_length": len(content)},
                 duration_ms
             )
@@ -115,7 +112,7 @@ class EpisodicMemory:
             pipeline = [
                 {
                     "$vectorSearch": {
-                        "index": "vector_index",
+                        "index": "v_idx_episodic_memories",
                         "path": "embedding",
                         "queryVector": query_embedding,
                         "numCandidates": limit or self.vector_limit * 5,

@@ -102,7 +102,7 @@ class EmbeddingClient:
             }
 
             response = await self._client.post(
-                f"{self.base_url}/embeddings",
+                f"{self.base_url}/v1/embeddings",
                 json=payload,
                 headers={"Content-Type": "application/json"},
             )

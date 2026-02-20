@@ -321,7 +321,7 @@ class SemanticMemory:
             pipeline = [
                 {
                     "$vectorSearch": {
-                        "index": "vector_index",
+                        "index": "v_idx_facts",
                         "path": "embedding",
                         "queryVector": query_embedding,
                         "numCandidates": limit or self.vector_limit * 5,

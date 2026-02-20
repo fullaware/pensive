@@ -1,5 +1,7 @@
 # Query Router Module
 """Query router that determines intent and routes to appropriate memory system."""
+import json
+import re
 from typing import List, Dict, Optional
 from memory_system.config import Config
 from utils.llm import LLMClient
@@ -77,17 +79,38 @@ Examples:
             }
 
         # Try to extract JSON from response
-        import json
-        import re
-
         try:
-            # Try to find JSON in response
-            json_match = re.search(r'\{[\s\S]*\}', response, re.DOTALL)
+            # First, try to strip common wrappers like markdown code blocks
+            cleaned_response = response.strip()
+            
+            # Remove markdown code fences if present
+            if cleaned_response.startswith("```"):
+                # Find the first ```json or ``` and extract from there
+                start = cleaned_response.find("```")
+                if start >= 0:
+                    start += 3  # Skip past ```
+                    # Skip language identifier if present (json, python, etc.)
+                    if cleaned_response[start:start+4].strip().startswith("json"):
+                        start += 4  # Skip "json" identifier
+                    elif cleaned_response[start:start+6].strip().startswith("python"):
+                        start += 6  # Skip "python" identifier
+                    start = start + len(cleaned_response[start:].split('\n')[0]) + 1  # Skip first newline
+                    end = cleaned_response.find("```", start)
+                    if end < 0:
+                        end = len(cleaned_response)
+                    cleaned_response = cleaned_response[start:end].strip()
+            
+            # Try to find JSON in cleaned response
+            json_match = re.search(r'\{[\s\S]*\}', cleaned_response, re.DOTALL)
             if json_match:
-                parsed = json.loads(json_match.group())
-                # Validate that intent is present
-                if "intent" in parsed:
-                    return parsed
+                try:
+                    parsed = json.loads(json_match.group())
+                    # Validate that intent is present
+                    if "intent" in parsed:
+                        return parsed
+                except json.JSONDecodeError:
+                    # JSON parsing failed, try with relaxed parsing
+                    pass
         except (json.JSONDecodeError, TypeError):
             pass
 
