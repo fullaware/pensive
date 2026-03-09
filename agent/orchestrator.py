@@ -72,12 +72,13 @@ class AgenticOrchestrator:
         self.time_tracker = TimeTracker()
         self.logger = OrchestratorLogger()
 
-    async def process_query(self, user_query: str, session_id: str = None) -> Dict:
+    async def process_query(self, user_query: str, session_id: str = None, commit_memories: bool = True) -> Dict:
         """Process a user query using all memory systems.
 
         Args:
             user_query: The user's input query
             session_id: Optional session identifier
+            commit_memories: Whether to commit memories to long-term storage (default: True)
 
         Returns:
             Response dictionary with:
@@ -90,6 +91,13 @@ class AgenticOrchestrator:
         from datetime import datetime
 
         self.logger.start()
+
+        # Check if this is a test command (skip memory commitment)
+        is_test_command = user_query.strip().startswith("/test")
+        if is_test_command:
+            commit_memories = False
+            # Remove the /test prefix for processing
+            user_query = user_query.strip()[5:].strip()
 
         # Generate session ID if not provided
         if not session_id:
@@ -125,17 +133,23 @@ class AgenticOrchestrator:
         )
         self.logger.log_stage("llm_complete", {"response_length": len(answer)})
 
-        # Add message to short-term memory
+        # Add message to short-term memory (always add to short-term for conversation context)
         self.short_term.add_message("user", user_query)
         self.short_term.add_message("assistant", answer)
 
-        # Commit to episodic memory (background task - doesn't block response)
-        self.logger.log_stage("committing_episodic", {"event_count": 2})
-        asyncio.create_task(self._commit_to_episodic_background(user_query, answer))
+        # Commit to episodic memory (optional - controlled by commit_memories flag)
+        if commit_memories:
+            self.logger.log_stage("committing_episodic", {"event_count": 2})
+            asyncio.create_task(self._commit_to_episodic_background(user_query, answer))
+        else:
+            self.logger.log_stage("committing_episodic", {"skipped": True, "reason": "test command"})
 
-        # Detect and store any facts from the user query (background task - doesn't block response)
-        self.logger.log_stage("fact_detection", {"query_length": len(user_query)})
-        asyncio.create_task(self._detect_and_store_facts_background(user_query, answer))
+        # Detect and store any facts from the user query (optional - controlled by commit_memories flag)
+        if commit_memories:
+            self.logger.log_stage("fact_detection", {"query_length": len(user_query)})
+            asyncio.create_task(self._detect_and_store_facts_background(user_query, answer))
+        else:
+            self.logger.log_stage("fact_detection", {"skipped": True, "reason": "test command"})
 
         summary = self.logger.get_summary()
         summary["answer_length"] = len(answer)
@@ -147,6 +161,7 @@ class AgenticOrchestrator:
             "memories": memories.get("retrieved", {}),
             "session_id": session_id,
             "timing": summary,
+            "is_test_command": is_test_command,
         }
 
     async def _commit_to_episodic_background(self, user_query: str, answer: str) -> None:
@@ -203,8 +218,11 @@ class AgenticOrchestrator:
         if "episodic" in routing["memory_systems"]:
             events = await self._query_episodic_memory(routing["query"], session_id)
             if events:
-                memories["retrieved"]["episodic"] = events
-                memories["sources"].append("episodic memory")
+                # Enhance recalled events with time context for the LLM
+                current_time = datetime.now(timezone.utc)
+                enhanced_events = self._enhance_recall_with_time(events, current_time)
+                memories["retrieved"]["episodic"] = enhanced_events
+                memories["sources"].append("episodic memory (time-enhanced)")
 
         if "time" in routing["memory_systems"]:
             time_data = await self._query_time_data(routing["query"])
@@ -246,20 +264,154 @@ class AgenticOrchestrator:
         events = await self.episodic.vector_search(query, filters)
         return events
 
+    def _ensure_utc_datetime(self, dt: datetime) -> datetime:
+        """Ensure a datetime is timezone-aware and in UTC.
+        
+        Args:
+            dt: The datetime to convert
+            
+        Returns:
+            UTC timezone-aware datetime
+        """
+        if dt is None:
+            return datetime.now(timezone.utc)
+        if dt.tzinfo is None:
+            # If timezone-naive, assume it's UTC
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    def _enhance_recall_with_time(self, events: List[Dict], current_time: datetime) -> List[Dict]:
+        """Enhance recalled events with time context for the LLM.
+
+        This method processes retrieved memories and adds time-based context
+        to help the LLM make time-based realizations about the data.
+
+        Args:
+            events: List of events from episodic memory
+            current_time: Current UTC datetime for time calculations
+
+        Returns:
+            List of events with enhanced time context
+        """
+        enhanced_events = []
+        
+        for event in events:
+            event_copy = dict(event)
+            
+            # Get event timestamp (default to current time if not available)
+            event_time = event.get("timestamp", current_time)
+            
+            # Ensure both datetimes are timezone-aware UTC
+            event_time = self._ensure_utc_datetime(event_time)
+            current_time = self._ensure_utc_datetime(current_time)
+            
+            # Calculate time relative to now
+            diff = current_time - event_time
+            diff_seconds = abs(diff.total_seconds())
+            
+            # Calculate time components
+            days = int(diff_seconds // 86400)
+            hours = int((diff_seconds % 86400) // 3600)
+            minutes = int((diff_seconds % 3600) // 60)
+            
+            # Format time relative to now
+            if diff.total_seconds() < 0:
+                # Future event
+                if days > 0:
+                    time_relative = f"in {days} days"
+                elif hours > 0:
+                    time_relative = f"in {hours} hours"
+                else:
+                    time_relative = f"in {minutes} minutes"
+            else:
+                # Past event
+                if days > 30:
+                    # More than a month ago - use date
+                    time_relative = event_time.strftime("%B %d, %Y")
+                elif days > 0:
+                    time_relative = f"{days} day{'s' if days != 1 else ''} ago"
+                elif hours > 0:
+                    time_relative = f"{hours} hour{'s' if hours != 1 else ''} ago"
+                elif minutes > 0:
+                    time_relative = f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+                else:
+                    time_relative = "just now"
+            
+            # Add time context to event
+            event_copy["time_context"] = {
+                "event_timestamp": event_time.isoformat() if hasattr(event_time, 'isoformat') else str(event_time),
+                "time_relative_to_now": time_relative,
+                "seconds_ago": int(diff_seconds) if diff.total_seconds() >= 0 else -1,
+                "is_recent": diff_seconds < 3600,  # Within the last hour
+                "is_today": event_time.date() == current_time.date() if hasattr(event_time, 'date') else False
+            }
+            
+            enhanced_events.append(event_copy)
+        
+        return enhanced_events
+
+    def _format_time_relative_to_now(self, dt: datetime, now: datetime) -> str:
+        """Format a datetime relative to now for human understanding.
+        
+        Args:
+            dt: The datetime to format
+            now: The current datetime (UTC)
+            
+        Returns:
+            Human-readable time relative string (e.g., "2 hours ago", "in 3 days")
+        """
+        from datetime import timedelta
+        
+        # Ensure both datetimes are timezone-aware UTC
+        dt = self._ensure_utc_datetime(dt)
+        now = self._ensure_utc_datetime(now)
+        
+        diff = now - dt
+        diff_seconds = abs(diff.total_seconds())
+        
+        # Calculate time components
+        days = int(diff_seconds // 86400)
+        hours = int((diff_seconds % 86400) // 3600)
+        minutes = int((diff_seconds % 3600) // 60)
+        
+        if diff.total_seconds() < 0:
+            # Future time
+            if days > 0:
+                return f"in {days} days" if days < 7 else f"in {days} days ({dt.strftime('%B %d')})"
+            elif hours > 0:
+                return f"in {hours} hours"
+            else:
+                return f"in {minutes} minutes"
+        else:
+            # Past time
+            if days > 30:
+                # More than a month ago - use date
+                return dt.strftime("%B %d, %Y")
+            elif days > 0:
+                return f"{days} day{'s' if days != 1 else ''} ago"
+            elif hours > 0:
+                return f"{hours} hour{'s' if hours != 1 else ''} ago"
+            elif minutes > 0:
+                return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+            else:
+                return "just now"
+
     async def _query_time_data(self, query: str) -> Dict:
-        """Query time tracking data.
+        """Query time tracking data with temporal context.
 
         Args:
             query: Query string
 
         Returns:
-            Time tracking data
+            Time tracking data with relative time information
         """
         from datetime import datetime, timedelta
 
-        # Get current date and time in the local timezone (America/New_York)
+        # Get current UTC time (stored as ISODate in MongoDB)
         current_time = datetime.now(timezone.utc)
-        current_date_str = current_time.strftime("%B %d, %Y at %I:%M %p")
+        
+        # Format current date/time for display
+        current_date_str = current_time.strftime("%B %d, %Y at %I:%M %p UTC")
         
         # Get current day of week
         day_of_week = current_time.strftime("%A")
@@ -274,12 +426,39 @@ class AgenticOrchestrator:
             if t.get("due_date") and t.get("due_date") <= tomorrow
         ]
         
+        # Get active time tracking sessions
+        active_sessions = await self.time_tracker.get_active_sessions()
+        
+        # Calculate time relative to now for each task/session
+        tasks_with_time_context = []
+        for task in tasks:
+            task_copy = dict(task)
+            created_at = task.get("created_at", current_time)
+            task_copy["time_relative"] = self._format_time_relative_to_now(created_at, current_time)
+            if task.get("due_date"):
+                task_copy["due_relative"] = self._format_time_relative_to_now(task["due_date"], current_time)
+            tasks_with_time_context.append(task_copy)
+        
+        sessions_with_time_context = []
+        for session in active_sessions:
+            session_copy = dict(session)
+            session_copy["duration_minutes"] = round(session.get("duration_seconds", 0) / 60, 2)
+            start_relative = self._format_time_relative_to_now(session.get("start_time", current_time), current_time)
+            session_copy["started_relative"] = start_relative
+            sessions_with_time_context.append(session_copy)
+        
         return {
-            "recent_tasks": tasks[:5],
+            "recent_tasks": tasks_with_time_context[:5],
             "upcoming_tasks": upcoming_tasks,
             "current_date": current_date_str,
             "current_day": day_of_week,
-            "current_timestamp": current_time.isoformat()
+            "current_timestamp": current_time.isoformat(),
+            "time_relative_context": {
+                "now_utc": current_time.isoformat(),
+                "now_formatted": f"{day_of_week}, {current_time.strftime('%B %d, %Y at %I:%M %p UTC')}",
+                "active_sessions_count": len(active_sessions),
+                "active_sessions_with_time": sessions_with_time_context
+            }
         }
 
     async def _build_system_prompt(self, memories: Dict) -> str:
@@ -342,13 +521,33 @@ class AgenticOrchestrator:
 
         if memories.get("retrieved", {}).get("time"):
             time_data = memories["retrieved"]["time"]
-            memory_context.append("\n=== CURRENT DATE AND TIME ===")
-            memory_context.append(f"Today is {time_data.get('current_day', '')}, {time_data.get('current_date', '')}")
-            memory_context.append(f"(Timestamp: {time_data.get('current_timestamp', '')})")
+            memory_context.append("\n=== CURRENT DATE AND TIME (UTC) ===")
+            memory_context.append(f"Current UTC Timestamp: {time_data.get('current_timestamp', '')}")
+            memory_context.append(f"Current Date/Time: {time_data.get('current_date', '')}")
+            
+            # Add temporal context for the LLM
+            time_relative = time_data.get("time_relative_context", {})
+            if time_relative:
+                memory_context.append(f"Active Time Tracking Sessions: {time_relative.get('active_sessions_count', 0)}")
+                memory_context.append("")
+                memory_context.append("=== TIME RELATIVE CONTEXT ===")
+                memory_context.append(f"Current moment (UTC): {time_relative.get('now_utc', '')}")
+                memory_context.append(f"Formatted for user: {time_relative.get('now_formatted', '')}")
+            
             memory_context.append("")
-            memory_context.append("Time Tracking:")
+            memory_context.append("=== TIME-ENHANCED TASKS ===")
             for task in time_data.get("recent_tasks", []):
-                memory_context.append(f"- Task: {task.get('title', '')}")
+                task_name = task.get('title', 'Unknown Task')
+                task_time = task.get('time_relative', 'created recently')
+                due_relative = task.get('due_relative', '')
+                memory_context.append(f"- {task_name} ({task_time}")
+                if due_relative:
+                    memory_context.append(f", due: {due_relative})")
+                else:
+                    memory_context.append(")")
+            
+            memory_context.append("")
+            memory_context.append("IMPORTANT: All timestamps above are stored in MongoDB as UTC ISODate. Use the current UTC time as your reference point for time-based reasoning.")
 
         if memory_context:
             return f"{base_prompt}\n\n## Context:\n" + "\n".join(memory_context)
@@ -397,7 +596,10 @@ class AgenticOrchestrator:
         messages.append({"role": "user", "content": f"User query context: {intent_str}"})
 
         response = await self.llm.generate(messages, temperature=0, max_tokens=None)
-        return response or "I'm not sure how to answer that."
+        if not response:
+            print("Warning: LLM returned empty response, using fallback")
+            return "I'm not sure how to answer that."
+        return response
 
     async def update_user_preference(self, key: str, value: str) -> str:
         """Update a user preference.

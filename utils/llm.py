@@ -65,6 +65,10 @@ class LLMClient:
             content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
             print(f"[LLM] elapsed={elapsed:.3f}s | tps={tps} | tokens_in={tokens_in} | tokens_out={tokens_out}")
             
+            # Log warning if content is empty
+            if not content:
+                print(f"[LLM] Warning: Empty content returned from LLM. Full response: {result}")
+            
             return content
 
         except Exception as e:

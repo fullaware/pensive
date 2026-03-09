@@ -25,6 +25,15 @@ The key insight from the article is that to move from forgetful chatbots to trul
 - **Dynamic Fact Detection**: LLM-based extraction of important information from conversations
 - **Vector Search for Facts**: Semantic similarity-based fact retrieval using embeddings
 
+### Time-Aware Features
+
+- **Time-Enhanced Recall**: All episodic memory queries include time context relative to "now"
+- **UTC-First Timestamps**: All timestamps stored as ISODate in MongoDB (UTC timezone)
+- **Relative Time Display**: Human-readable time context (e.g., "2 hours ago", "in 3 days")
+- **Time Tracking Integration**: Active time tracking sessions with duration calculations
+- **Temporal Context in Prompts**: LLM receives current date/time with explicit UTC reference
+- **Test Command**: `/test` prefix allows memory verification without committing new memories
+
 ## Features (AI Agent Perspective)
 
 ### Dynamic Memory Learning
