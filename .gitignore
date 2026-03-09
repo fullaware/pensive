@@ -66,3 +66,4 @@ logs/
 *.sqlite3
 
 .cursor
+.continue

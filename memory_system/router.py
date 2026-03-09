@@ -49,6 +49,13 @@ Examples:
 - "Tell me about yesterday" -> intent: conversation, query: "yesterday"
 - "What projects have we worked on?" -> intent: fact, query: "projects"
 - "Tell me about our current work?" -> intent: fact, query: "current work"
+
+TIME-RELATED QUERY INDICATORS (should be routed to time intent):
+- "what time is it", "current time", "now", "what's the time"
+- "what day is it", "today", "current date", "what date is it"
+- "how long", "duration", "time spent", "elapsed time"
+- "since", "ago", "from now", "in", "days ago", "hours ago"
+- "current", "now", "present", "today", "this week", "this month"
 """
 
         messages = [
@@ -170,7 +177,7 @@ Examples:
         query = await self.generate_memory_query(user_query, intent)
 
         # Always query all memory systems - let the AI decide what's relevant
-        memory_systems = ["short_term", "episodic", "semantic"]
+        memory_systems = ["short_term", "episodic", "semantic", "time"]
 
         return {
             "intent": intent,
