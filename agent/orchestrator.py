@@ -11,6 +11,7 @@ from memory_system import (
     SemanticMemory,
     QueryRouter,
     SystemPromptsManager,
+    Bootstrapper,
 )
 from utils import LLMClient, EmbeddingClient
 from time_management import TaskManager, ReminderManager, TimeTracker
@@ -71,6 +72,8 @@ class AgenticOrchestrator:
         self.reminders = ReminderManager()
         self.time_tracker = TimeTracker()
         self.logger = OrchestratorLogger()
+        self.bootstrapper: Optional[Bootstrapper] = None
+        self.bootstrap_prompt: Optional[str] = None
 
     async def process_query(self, user_query: str, session_id: str = None, commit_memories: bool = True) -> Dict:
         """Process a user query using all memory systems.
@@ -185,6 +188,9 @@ class AgenticOrchestrator:
             from datetime import datetime
             session_id = f"session_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
             await self._detect_and_store_facts(user_query, answer, session_id)
+            
+            # Trigger bootstrap update after fact detection
+            await self.trigger_bootstrap_update()
         except Exception as e:
             print(f"Error detecting/storing facts: {e}")
 
@@ -485,6 +491,10 @@ class AgenticOrchestrator:
         # Get base system prompt
         base_prompt = await self.system_prompts.build_system_prompt(context)
         
+        # Add bootstrap prompt content if available
+        if self.bootstrap_prompt:
+            base_prompt = f"{base_prompt}\n\n## LONG-TERM MEMORY (Bootstrap)\nThis section contains important long-term information about the user that persists across sessions.\n\n{self.bootstrap_prompt}"
+        
         # Add instruction to not output JSON for responses
         base_prompt = f"{base_prompt}\n\nIMPORTANT: When responding to the user, always use natural language. Do not output JSON or any other structured data format unless explicitly asked to do so."
 
@@ -739,3 +749,22 @@ Rules for extraction:
         await self.episodic.close()
         await self.router.close()
         await self.llm.close()
+
+    async def initialize_bootstrap(self) -> None:
+        """Initialize the bootstrapper and load the bootstrap prompt from MongoDB.
+        
+        This should be called after MongoDB connection is established and before
+        processing queries.
+        """
+        self.bootstrapper = Bootstrapper()
+        self.bootstrap_prompt = await self.bootstrapper.load_bootstrap()
+        print(f"[Bootstrap] Loaded bootstrap prompt ({len(self.bootstrap_prompt)} chars)")
+
+    async def trigger_bootstrap_update(self) -> None:
+        """Trigger an update of the bootstrap prompt in the background.
+        
+        This should be called after significant events (new facts learned,
+        important conversations, etc.) to keep the SYSTEM prompt current.
+        """
+        if self.bootstrapper:
+            asyncio.create_task(self.bootstrapper.auto_update_bootstrap())

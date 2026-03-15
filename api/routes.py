@@ -58,6 +58,8 @@ async def get_orchestrator() -> AgenticOrchestrator:
     """Get or create orchestrator instance."""
     if not hasattr(app.state, "orchestrator"):
         app.state.orchestrator = AgenticOrchestrator()
+        # Initialize bootstrap when orchestrator is created
+        await app.state.orchestrator.initialize_bootstrap()
     return app.state.orchestrator
 
 

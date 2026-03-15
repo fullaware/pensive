@@ -21,6 +21,7 @@ from .episodic import EpisodicMemory
 from .semantic import SemanticMemory
 from .system_prompts import SystemPromptsManager
 from .router import QueryRouter
+from .bootstrapper import Bootstrapper
 
 __all__ = [
     "Config",
@@ -44,4 +45,5 @@ __all__ = [
     "SemanticMemory",
     "SystemPromptsManager",
     "QueryRouter",
+    "Bootstrapper",
 ]

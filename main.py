@@ -23,6 +23,10 @@ async def main():
         # Create orchestrator
         orchestrator = AgenticOrchestrator()
 
+        # Initialize bootstrap prompt from MongoDB
+        print("Loading bootstrap prompt from MongoDB...")
+        await orchestrator.initialize_bootstrap()
+
         print("Agentic Memory System Ready!")
         print("Type 'quit' or 'exit' to stop.")
         print()

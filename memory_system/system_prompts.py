@@ -1,7 +1,7 @@
 # System Prompts Manager
 """System prompt management and generation."""
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorCollection
 from memory_system import db, SystemPromptSchema
 from .config import Config
@@ -204,3 +204,135 @@ class SystemPromptsManager:
             Dictionary of preference key-value pairs
         """
         return await self.get_all_user_preferences()
+
+    # ===== BOOTSTRAP PROMPT METHODS =====
+
+    async def get_bootstrap_prompt(self, active: bool = True) -> Optional[Dict]:
+        """Get the latest active bootstrap prompt from MongoDB.
+        
+        The bootstrap prompt contains long-term memory that persists across sessions.
+        
+        Args:
+            active: Whether to only get active prompts
+            
+        Returns:
+            Bootstrap prompt document or None if not found
+        """
+        query = {"name": "bootstrap", "is_bootstrap": True}
+        if active:
+            query["active"] = True
+
+        # Get the latest version of the bootstrap prompt
+        prompt = await self.collection.find_one(
+            query, sort=[("version", -1), ("updated_at", -1)]
+        )
+        return prompt
+
+    async def get_bootstrap_prompt_content(self) -> Optional[str]:
+        """Get the content of the bootstrap prompt.
+        
+        Returns:
+            Bootstrap prompt content string or None if not found
+        """
+        prompt = await self.get_bootstrap_prompt()
+        return prompt.get("prompt") if prompt else None
+
+    async def update_bootstrap_prompt(
+        self,
+        new_content: str,
+        increment_version: bool = True
+    ) -> str:
+        """Update the bootstrap prompt with new content.
+        
+        Creates a new version of the bootstrap prompt, archiving the previous version.
+        This allows for version tracking and rollback capability.
+        
+        Args:
+            new_content: The new prompt content
+            increment_version: If True, increment version number for version tracking
+            
+        Returns:
+            The ObjectId of the newly created prompt document
+        """
+        # Get the current bootstrap prompt
+        current = await self.get_bootstrap_prompt(active=True)
+        
+        if current and increment_version:
+            # Archive the current version by deactivating it
+            from bson import ObjectId
+            await self.collection.update_one(
+                {"_id": ObjectId(current["_id"])},
+                {"$set": {"active": False}}
+            )
+            
+            # Create new version with incremented version number
+            new_version = current.get("version", 1) + 1
+        else:
+            new_version = 1
+
+        prompt_doc = SystemPromptSchema.create(
+            name="bootstrap",
+            prompt=new_content,
+            prompt_type=SystemPromptSchema.TYPE_BOOTSTRAP,
+            version=new_version,
+            active=True,
+            metadata={
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "content_length": len(new_content)
+            },
+            is_bootstrap=True,
+        )
+        
+        result = await self.collection.insert_one(prompt_doc)
+        return str(result.inserted_id)
+
+    async def revert_to_version(self, version: int) -> bool:
+        """Revert to a previous version of the bootstrap prompt.
+        
+        Args:
+            version: The version number to revert to
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # Find the specified version
+        prompt = await self.collection.find_one(
+            {"name": "bootstrap", "version": version, "is_bootstrap": True}
+        )
+        
+        if not prompt:
+            return False
+        
+        # Deactivate current version
+        current = await self.get_bootstrap_prompt(active=True)
+        if current:
+            from bson import ObjectId
+            await self.collection.update_one(
+                {"_id": ObjectId(current["_id"])},
+                {"$set": {"active": False}}
+            )
+        
+        # Activate the target version
+        from bson import ObjectId
+        await self.collection.update_one(
+            {"_id": ObjectId(prompt["_id"])},
+            {"$set": {"active": True}}
+        )
+        
+        return True
+
+    async def get_bootstrap_history(self, limit: int = 10) -> List[Dict]:
+        """Get the version history of the bootstrap prompt.
+        
+        Args:
+            limit: Maximum number of versions to return
+            
+        Returns:
+            List of bootstrap prompt documents sorted by version (newest first)
+        """
+        cursor = self.collection.find(
+            {"name": "bootstrap", "is_bootstrap": True}
+        ).sort("version", -1).limit(limit)
+        
+        history = await cursor.to_list(length=limit)
+        return history

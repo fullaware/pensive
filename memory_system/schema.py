@@ -212,11 +212,12 @@ class ReminderSchema:
 
 
 class SystemPromptSchema:
-    """Schema for system prompts."""
+    """Schema for system prompts with version tracking and bootstrap support."""
 
     TYPE_DEFAULT = "default"
     TYPE_USER_PREFERENCE = "user_preference"
     TYPE_CONTEXT = "context"
+    TYPE_BOOTSTRAP = "bootstrap"  # Used for long-term memory persistence
 
     @staticmethod
     def create(
@@ -226,8 +227,19 @@ class SystemPromptSchema:
         version: int = 1,
         active: bool = True,
         metadata: Optional[Dict] = None,
+        is_bootstrap: bool = False,
     ) -> Dict:
-        """Create a new system prompt document."""
+        """Create a new system prompt document.
+        
+        Args:
+            name: Prompt name/identifier
+            prompt: The prompt content
+            prompt_type: Type (default, user_preference, context, bootstrap)
+            version: Version number (for rollback capability)
+            active: Whether prompt is active
+            metadata: Additional context
+            is_bootstrap: If True, this prompt is used for bootstrapping long-term memory
+        """
         return {
             "type": "system_prompt",
             "name": name,
@@ -236,12 +248,26 @@ class SystemPromptSchema:
             "version": version,
             "active": active,
             "metadata": metadata or {},
+            "is_bootstrap": is_bootstrap,
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
         }
 
     @staticmethod
-    def update(prompt_id: str, updates: Dict) -> Dict:
-        """Create an update document for a system prompt."""
-        updates["updated_at"] = datetime.now(timezone.utc)
-        return {"$set": updates}
+    def update(prompt_id: str, updates: Dict, increment_version: bool = False) -> Dict:
+        """Create an update document for a system prompt.
+        
+        Args:
+            prompt_id: Prompt ObjectId as string (not used, kept for compatibility)
+            updates: Fields to update
+            increment_version: If True, increment version number for version tracking
+        """
+        from copy import deepcopy
+        update_doc = deepcopy(updates)
+        update_doc["updated_at"] = datetime.now(timezone.utc)
+        
+        # Build proper MongoDB update document
+        result = {"$set": update_doc}
+        if increment_version:
+            result["$inc"] = {"version": 1}
+        return result

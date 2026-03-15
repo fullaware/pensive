@@ -34,6 +34,14 @@ The key insight from the article is that to move from forgetful chatbots to trul
 - **Temporal Context in Prompts**: LLM receives current date/time with explicit UTC reference
 - **Test Command**: `/test` prefix allows memory verification without committing new memories
 
+### Long-Term Memory Bootstrap (SYSTEM Prompt Persistence)
+
+- **SYSTEM Prompt in MongoDB**: The SYSTEM prompt is persisted in MongoDB and loaded on startup
+- **Auto-Consolidation**: After fact detection, the SYSTEM prompt is automatically updated with new information
+- **Version Tracking**: Multiple versions of the SYSTEM prompt are stored for rollback capability
+- **Fast Bootstrap**: The bootstrap prompt is loaded from MongoDB on startup, providing long-term memory context
+- **Background Updates**: The SYSTEM prompt is updated in the background after significant events
+
 ## Features (AI Agent Perspective)
 
 ### Dynamic Memory Learning
