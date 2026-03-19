@@ -375,6 +375,272 @@ class SemanticMemory:
             cursor = self.collection.find({"archived": {"$ne": True}})
             return await cursor.to_list(length=limit or self.vector_limit)
 
+    async def get_fact_with_decay(self, key: str, category: Optional[str] = None) -> Optional[Dict]:
+        """Get a fact by key with decayed confidence.
+        
+        Args:
+            key: Fact key
+            category: Optional category filter
+            
+        Returns:
+            Fact document with updated confidence or None if not found
+        """
+        fact = await self.get_fact(key, category)
+        if not fact:
+            return None
+        
+        from memory_system.decay import memory_decay
+        decayed_confidence = memory_decay.calculate_confidence_with_decay(
+            fact.get("confidence", 1.0),
+            fact.get("created_at", datetime.now(timezone.utc)),
+        )
+        
+        return {
+            **fact,
+            "confidence": decayed_confidence,
+            "decayed_at": datetime.now(timezone.utc),
+        }
+
+    async def resolve_fact_conflict(
+        self,
+        fact_key: str,
+        new_value: str,
+        source_weight: float = 1.0,
+        merge_strategy: str = "latest_wins",
+    ) -> Optional[str]:
+        """Resolve a conflict when updating a fact.
+        
+        Args:
+            fact_key: Fact key to update
+            new_value: New value for the fact
+            source_weight: Weight of this source (0-1)
+            merge_strategy: "latest_wins", "weighted_average", or "majority_vote"
+            
+        Returns:
+            The updated fact's ObjectId as string, or None if failed
+        """
+        current = await self.get_fact(fact_key)
+        if not current:
+            return await self.add_fact(
+                category="user",
+                key=fact_key,
+                value=new_value,
+                confidence=source_weight,
+            )
+        
+        # Get current version for comparison
+        current_version = current.get("version", 1)
+        
+        # Apply merge strategy
+        if merge_strategy == "latest_wins":
+            final_value = new_value
+            final_confidence = source_weight
+            final_confidence_explanation = f"Latest update from source with weight {source_weight}"
+            
+        elif merge_strategy == "weighted_average":
+            current_weight = current.get("provenance", {}).get("source_weight", 1.0)
+            final_confidence = (
+                current.get("confidence", 1.0) * current_weight +
+                source_weight * (1 - current_weight)
+            )
+            final_value = new_value
+            final_confidence_explanation = f"Weighted average (current: {current_weight}, new: {source_weight})"
+            
+        else:  # majority_vote or default
+            final_value = new_value
+            final_confidence = source_weight
+            final_confidence_explanation = f"Update with source weight {source_weight}"
+        
+        # Mark current version as archived
+        await self.collection.update_one(
+            {"_id": current["_id"]},
+            {"$set": {"archived": True, "archived_at": datetime.now(timezone.utc)}}
+        )
+        
+        # Create new version
+        new_version = current_version + 1
+        fact_doc = FactSchema.create(
+            category=current.get("category", "user"),
+            key=fact_key,
+            value=final_value,
+            confidence=final_confidence,
+            metadata=current.get("metadata", {}),
+            version=new_version,
+            source="merge_operation",
+            confidence_explanation=final_confidence_explanation,
+            source_weight=source_weight,
+            conflict_status="resolved",
+        )
+        
+        result = await self.collection.insert_one(fact_doc)
+        return str(result.inserted_id)
+
+    async def set_fact_disputed(self, fact_key: str, reason: str) -> bool:
+        """Mark a fact as disputed for human review.
+        
+        Args:
+            fact_key: Fact key to mark as disputed
+            reason: Reason for dispute
+            
+        Returns:
+            True if fact was marked as disputed
+        """
+        result = await self.collection.update_one(
+            {"key": fact_key},
+            {"$set": {
+                "temporal.conflict_status": "disputed",
+                "metadata.dispute_reason": reason,
+            }}
+        )
+        return result.modified_count > 0
+
+    async def verify_fact(self, fact_key: str, verified_by: str) -> bool:
+        """Mark a disputed fact as verified.
+        
+        Args:
+            fact_key: Fact key to verify
+            verified_by: Who verified (user/system)
+            
+        Returns:
+            True if fact was verified
+        """
+        result = await self.collection.update_one(
+            {"key": fact_key},
+            {"$set": {
+                "temporal.conflict_status": "resolved",
+                "provenance.human_verified": True,
+                "provenance.verified_by": verified_by,
+                "provenance.verified_at": datetime.now(timezone.utc),
+            }}
+        )
+        return result.modified_count > 0
+
+    async def get_retrieval_stats(self, key: str) -> Dict:
+        """Get retrieval statistics for a fact.
+        
+        Args:
+            key: Fact key
+            
+        Returns:
+            Dictionary with retrieval statistics
+        """
+        cursor = await self.collection.find({"key": key}).sort("version", 1)
+        versions = await cursor.to_list(length=None)
+        
+        if not versions:
+            return {}
+        
+        total_versions = len(versions)
+        latest_version = max(v.get("version", 0) for v in versions)
+        
+        confidence_history = [
+            {"version": v.get("version", 0), "confidence": v.get("confidence", 0)}
+            for v in versions
+        ]
+        
+        return {
+            "key": key,
+            "total_versions": total_versions,
+            "latest_version": latest_version,
+            "confidence_history": confidence_history,
+            "created_at": versions[0].get("created_at"),
+            "latest_updated": versions[-1].get("updated_at"),
+        }
+
+    async def get_all_facts_with_decay(self) -> List[Dict]:
+        """Get all non-archived facts with decayed confidence.
+        
+        Returns:
+            List of facts with updated confidence scores
+        """
+        facts = await self.get_all_facts()
+        
+        from memory_system.decay import memory_decay
+        
+        result = []
+        for fact in facts:
+            decayed_confidence = memory_decay.calculate_confidence_with_decay(
+                fact.get("confidence", 1.0),
+                fact.get("created_at", datetime.now(timezone.utc)),
+            )
+            result.append({
+                **fact,
+                "confidence": decayed_confidence,
+                "decayed_at": datetime.now(timezone.utc),
+            })
+        
+        return result
+
+    async def get_facts_by_confidence_range(
+        self,
+        min_confidence: float = 0.0,
+        max_confidence: float = 1.0,
+        include_archived: bool = False,
+    ) -> List[Dict]:
+        """Get facts within a confidence range.
+        
+        Args:
+            min_confidence: Minimum confidence threshold
+            max_confidence: Maximum confidence threshold
+            include_archived: Include archived facts
+            
+        Returns:
+            List of matching facts
+        """
+        query = {
+            "confidence": {"$gte": min_confidence, "$lte": max_confidence}
+        }
+        
+        if not include_archived:
+            query["archived"] = {"$ne": True}
+        
+        cursor = self.collection.find(query)
+        return await cursor.to_list(length=None)
+
+    async def get_memory_health_stats(self) -> Dict:
+        """Get memory health statistics.
+        
+        Returns:
+            Dictionary with memory health metrics
+        """
+        from memory_system.decay import memory_decay
+        
+        total_facts = await self.collection.count_documents({})
+        
+        category_counts = await self.collection.aggregate([
+            {"$group": {"_id": "$category", "count": {"$sum": 1}}}
+        ]).to_list(length=None)
+        
+        high_confidence = await self.collection.count_documents({
+            "confidence": {"$gte": 0.8},
+            "archived": {"$ne": True}
+        })
+        medium_confidence = await self.collection.count_documents({
+            "confidence": {"$gte": 0.5, "$lt": 0.8},
+            "archived": {"$ne": True}
+        })
+        low_confidence = await self.collection.count_documents({
+            "confidence": {"$lt": 0.5},
+            "archived": {"$ne": True}
+        })
+        
+        # Get disputed facts
+        disputed = await self.collection.count_documents({
+            "temporal.conflict_status": "disputed"
+        })
+        
+        return {
+            "total_facts": total_facts,
+            "non_archived_count": high_confidence + medium_confidence + low_confidence,
+            "by_category": {item["_id"] or "uncategorized": item["count"] for item in category_counts},
+            "by_confidence": {
+                "high": high_confidence,
+                "medium": medium_confidence,
+                "low": low_confidence,
+            },
+            "disputed_count": disputed,
+        }
+
     async def close(self):
         """Close any resources."""
         pass
