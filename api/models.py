@@ -119,3 +119,98 @@ class TaskResponse(BaseModel):
     updated_at: str
     progress: int
     tags: List[str]
+
+
+class MemoryManagementRunRequest(BaseModel):
+    """Request model for running memory cleanup tasks."""
+    task_names: Optional[List[str]] = Field(default=None, description="Specific task names to run. If None, runs all configured tasks.")
+    run_compression: Optional[bool] = Field(default=True, description="Whether to run compression")
+    compression_age_days: Optional[int] = Field(default=30, description="Age threshold for compression")
+    run_staleness_check: Optional[bool] = Field(default=True, description="Whether to check for stale memories")
+    staleness_threshold_days: Optional[int] = Field(default=14, description="Age threshold for staleness")
+    archive_confidence_threshold: Optional[float] = Field(default=0.3, description="Confidence threshold for archiving")
+    archive_age_days: Optional[int] = Field(default=90, description="Age threshold for archiving")
+
+
+class MemoryManagementResponse(BaseModel):
+    """Response model for memory management operations."""
+    success: bool
+    message: str
+    results: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MemoryManagementStatusResponse(BaseModel):
+    """Response model for memory management status."""
+    is_running: bool
+    last_cleanup: Optional[str]
+    tasks_completed: int
+
+
+class MemoryManagementMetricsResponse(BaseModel):
+    """Response model for memory health metrics."""
+    total_memories: int
+    facts_count: int
+    episodic_count: int
+    age_distribution: Dict[str, int]
+    hot_memories_count: int
+    cold_memories_count: int
+    search_success_rate: float
+    total_searches_last_30_days: int
+    memory_health: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    retrieved_recently_count: int
+    stale_count: int
+    archived_count: int
+    run_timestamp: str
+
+
+class MemoryManagementScheduleRequest(BaseModel):
+    """Request model for memory management schedule endpoint."""
+    cron_expression: str = Field(
+        default="0 2 * * *", 
+        description="Cron expression for scheduling (default: daily at 2 AM UTC)"
+    )
+    enabled: bool = Field(
+        default=True, 
+        description="Whether to enable automated scheduling"
+    )
+    tasks: List[str] = Field(
+        default_factory=lambda: [
+            "system_prompt_versions",
+            "stale_memories", 
+            "low_confidence_archival",
+            "compression",
+            "memory_health_metrics"
+        ],
+        description="List of tasks to run during scheduled execution"
+    )
+
+
+class MemoryManagementScheduleResponse(BaseModel):
+    """Response model for memory management schedule endpoint."""
+    cron_expression: str
+    enabled: bool
+    next_run_at: Optional[str] = None
+    tasks: List[str]
+    last_run_at: Optional[str] = None
+
+
+class MemoryManagementTriggerRequest(BaseModel):
+    """Request model for triggering memory management immediately."""
+    tasks: List[str] = Field(
+        default_factory=lambda: [
+            "system_prompt_versions",
+            "stale_memories", 
+            "low_confidence_archival",
+            "compression",
+            "memory_health_metrics"
+        ],
+        description="List of tasks to run immediately"
+    )
+
+
+class MemoryManagementTriggerResponse(BaseModel):
+    """Response model for immediate memory management trigger."""
+    success: bool
+    message: str
+    tasks_triggered: List[str]
+    executed_at: str

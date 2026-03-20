@@ -33,6 +33,12 @@ from api.models import (
     FactResponse,
     TaskCreateRequest,
     TaskResponse,
+    MemoryManagementRunRequest,
+    MemoryManagementResponse,
+    MemoryManagementStatusResponse,
+    MemoryManagementMetricsResponse,
+    MemoryManagementScheduleRequest,
+    MemoryManagementScheduleResponse,
 )
 
 
@@ -407,6 +413,156 @@ async def add_episodic_memory(
             content=content,
         )
         return {"id": event_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ===== MEMORY MANAGEMENT API ENDPOINTS =====
+
+@app.post("/api/v1/memory-management/run")
+async def run_memory_management(
+    request: MemoryManagementRunRequest,
+) -> MemoryManagementResponse:
+    """Run memory management tasks manually or on a schedule.
+    
+    This endpoint allows you to run memory management tasks either:
+    - On-demand: Set schedule=None and tasks to run immediately
+    - Scheduled: Set a cron schedule to run periodically
+    
+    Args:
+        request: Request with optional task_names to specify which tasks to run
+                If empty, runs all configured tasks.
+    """
+    try:
+        from memory_system import AutomatedMemoryManager
+        
+        manager = AutomatedMemoryManager()
+        
+        # Determine which tasks to run
+        task_names = request.task_names if hasattr(request, 'task_names') and request.task_names else None
+        
+        # Run cleanup tasks (optionally filtering to specific tasks)
+        result = await manager.run_cleanup_tasks(task_names=task_names)
+        
+        return MemoryManagementResponse(
+            success=True,
+            message="Memory management tasks completed",
+            results=result,
+            executed_at=datetime.now(timezone.utc).isoformat()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/memory-management/schedule")
+async def schedule_memory_management(
+    request: MemoryManagementScheduleRequest,
+) -> Dict[str, Any]:
+    """Configure automated memory management scheduling.
+    
+    This endpoint allows you to set up automatic periodic execution of
+    memory management tasks using cron-style scheduling.
+    
+    Args:
+        request: Schedule configuration with cron expression and enabled flag
+        
+    Returns:
+        Schedule status and next scheduled run time
+    """
+    try:
+        from memory_system import AutomatedMemoryManager
+        
+        manager = AutomatedMemoryManager()
+        
+        # Update schedule configuration
+        manager.update_schedule(
+            cron_expression=request.cron_expression,
+            enabled=request.enabled,
+            tasks_to_run=request.tasks
+        )
+        
+        # Get next scheduled run time
+        next_run = manager.get_next_run_time()
+        
+        return {
+            "success": True,
+            "message": f"Memory management {'enabled' if request.enabled else 'disabled'}",
+            "schedule": {
+                "cron_expression": manager.cron_expression,
+                "enabled": manager.is_enabled(),
+                "next_run_at": next_run.isoformat() if next_run else None,
+                "tasks": manager.tasks_to_run
+            },
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/memory-management/schedule")
+async def get_memory_management_schedule() -> MemoryManagementScheduleResponse:
+    """Get current memory management schedule configuration."""
+    try:
+        from memory_system import AutomatedMemoryManager
+        
+        manager = AutomatedMemoryManager()
+        
+        next_run = manager.get_next_run_time()
+        
+        return MemoryManagementScheduleResponse(
+            cron_expression=manager.cron_expression,
+            enabled=manager.is_enabled(),
+            next_run_at=next_run.isoformat() if next_run else None,
+            tasks=manager.tasks_to_run,
+            last_run_at=manager.last_cleanup.isoformat() if manager.last_cleanup else None,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/memory-management/status")
+async def get_memory_management_status() -> MemoryManagementStatusResponse:
+    """Get the status of automated memory management."""
+    try:
+        from memory_system import AutomatedMemoryManager
+        
+        manager = AutomatedMemoryManager()
+        
+        last_cleanup = getattr(manager, "last_cleanup", None)
+        
+        return MemoryManagementStatusResponse(
+            is_running=False,  # Will be updated if background task is running
+            last_cleanup=last_cleanup.isoformat() if last_cleanup else None,
+            tasks_run=[
+                "system_prompt_versions",
+                "stale_memories",
+                "low_confidence_archival",
+                "compression",
+                "memory_health_metrics"
+            ]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/memory-management/metrics")
+async def get_memory_management_metrics() -> MemoryManagementMetricsResponse:
+    """Get memory management metrics."""
+    try:
+        from memory_system import MemoryMetrics
+        
+        metrics = MemoryMetrics()
+        stats = await metrics.get_memory_health_summary()
+        
+        return MemoryManagementMetricsResponse(
+            memory_health=stats,
+            retrieved_recently_count=stats.get("retrieved_recently", 0) if stats else 0,
+            stale_count=stats.get("stale_memories", {}).get("tagged_stale", 0) if stats else 0,
+            archived_count=stats.get("archived_memories", {}).get("total_archived", 0) if stats else 0,
+            run_timestamp=datetime.now(timezone.utc).isoformat()
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

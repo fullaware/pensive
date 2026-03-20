@@ -23,11 +23,12 @@ from .temporal import temporal_memory
 from .links import memory_links
 from .decay import memory_decay
 from .thematic import thematic_memory
-from .memory_metrics import memory_metrics
-from .compression import memory_compression
+from .memory_metrics import MemoryMetrics, memory_metrics
+from .compression import MemoryCompression, memory_compression
 from .system_prompts import SystemPromptsManager
 from .router import QueryRouter
 from .bootstrapper import Bootstrapper
+from .automated_manager import AutomatedMemoryManager
 
 __all__ = [
     "Config",
@@ -53,9 +54,12 @@ __all__ = [
     "memory_links",     # Memory linking
     "memory_decay",     # Decay/expiration
     "thematic_memory",  # Thematic memories (multi-level abstraction)
-    "memory_metrics",   # Memory metrics
+    "MemoryMetrics",    # Memory metrics class
+    "memory_metrics",   # Memory metrics instance
+    "MemoryCompression",
     "memory_compression",  # Memory compression/archiving
     "SystemPromptsManager",
     "QueryRouter",
     "Bootstrapper",
+    "AutomatedMemoryManager",  # Background loop for memory management
 ]

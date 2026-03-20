@@ -228,6 +228,9 @@ class MemoryMetrics:
         
         for fact in facts:
             created_at = fact.get("created_at", now)
+            # Handle timezone-aware vs naive datetime comparison
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
             age_days = (now - created_at).days
             
             if age_days <= 7:

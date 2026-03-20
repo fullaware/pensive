@@ -28,6 +28,14 @@ class Config:
     # Embedding Configuration
     EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "1024"))
 
+    # Automated Memory Management Configuration
+    MEMORY_CLEANUP_INTERVAL_HOURS = float(os.getenv("MEMORY_CLEANUP_INTERVAL_HOURS", "24"))
+    MAX_SYSTEM_PROMPT_VERSIONS = int(os.getenv("MAX_SYSTEM_PROMPT_VERSIONS", "5"))
+    STALENESS_DAYS_THRESHOLD = int(os.getenv("STALENESS_DAYS_THRESHOLD", "14"))
+    AUTO_TAG_ENABLED = os.getenv("AUTO_TAG_ENABLED", "true").lower() in ("true", "1", "yes")
+    LOW_CONFIDENCE_THRESHOLD = float(os.getenv("LOW_CONFIDENCE_THRESHOLD", "0.3"))
+    AUTO_ARCHIVE_AGE_DAYS = int(os.getenv("AUTO_ARCHIVE_AGE_DAYS", "90"))
+
     @classmethod
     def validate(cls) -> list[str]:
         """Validate required configuration values."""
