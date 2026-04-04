@@ -36,6 +36,11 @@ class Config:
     LOW_CONFIDENCE_THRESHOLD = float(os.getenv("LOW_CONFIDENCE_THRESHOLD", "0.3"))
     AUTO_ARCHIVE_AGE_DAYS = int(os.getenv("AUTO_ARCHIVE_AGE_DAYS", "90"))
 
+    # Telegram Configuration
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_UPDATE_METHOD = os.getenv("TELEGRAM_UPDATE_METHOD", "polling")  # "polling" or "webhook"
+    TELEGRAM_POLL_INTERVAL = float(os.getenv("TELEGRAM_POLL_INTERVAL", "1.0"))
+
     @classmethod
     def validate(cls) -> list[str]:
         """Validate required configuration values."""

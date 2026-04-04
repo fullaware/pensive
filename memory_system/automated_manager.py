@@ -635,19 +635,154 @@ class AutomatedMemoryManager:
         """
         if not self.enabled:
             return None
+
+    # ===== PATTERN DETECTION FOR REPEATED QUESTIONS =====
+
+    async def detect_repeated_questions(self, threshold: int = 3) -> Dict:
+        """
+        Detect repeated questions from users that may indicate the system
+        is being tested or users need specific skills.
         
-        try:
-            import croniter
+        Args:
+            threshold: Number of occurrences to consider "repeated"
             
-            now = datetime.now(timezone.utc)
-            cron = croniter.croniter(self.cron_expression, now)
-            next_run = cron.get_next(datetime)
+        Returns:
+            Statistics about repeated questions found
+        """
+        print(f"[AutomatedManager] Detecting repeated questions (threshold: {threshold})")
+        
+        episodic = db.get_collection(COLLECTION_EPISODIC)
+        
+        # Find questions (memories with "question" in content)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=7)  # Last 7 days
+        
+        cursor = episodic.find({
+            "timestamp": {"$gte": cutoff_date},
+            "content": {"$regex": r"\?", "$options": "i"}
+        })
+        
+        questions_by_user = {}
+        
+        async for memory in cursor:
+            content = memory.get("content", "")
+            source = memory.get("metadata", {}).get("source", "unknown")
+            sender_id = memory.get("metadata", {}).get("sender_id", "unknown")
             
-            return next_run.replace(tzinfo=timezone.utc)
-        except ImportError:
-            # Fallback: simple hourly calculation if croniter not available
-            print("[AutomatedManager] croniter not installed, using fallback scheduling")
-            return datetime.now(timezone.utc) + timedelta(hours=24)
-        except Exception as e:
-            print(f"[AutomatedManager] Error calculating next run time: {e}")
-            return None
+            # Normalize question (remove question mark, lowercase, strip)
+            normalized = content.rstrip("?").lower().strip()
+            
+            # Create key combining sender and normalized question
+            key = f"{sender_id}:{normalized}"
+            
+            if key not in questions_by_user:
+                questions_by_user[key] = {
+                    "original": content,
+                    "normalized": normalized,
+                    "sender_id": sender_id,
+                    "count": 0,
+                    "sources": [],
+                    "timestamps": []
+                }
+            
+            questions_by_user[key]["count"] += 1
+            questions_by_user[key]["sources"].append(source)
+            questions_by_user[key]["timestamps"].append(memory.get("timestamp"))
+        
+        # Filter to repeated questions
+        repeated = {
+            k: v for k, v in questions_by_user.items() 
+            if v["count"] >= threshold
+        }
+        
+        print(f"[AutomatedManager] Found {len(repeated)} repeated question patterns")
+        
+        # Return summary with recommendations
+        return {
+            "repeated_questions": len(repeated),
+            "total_questions_analyzed": len(questions_by_user),
+            "threshold": threshold,
+            "recommendations": self._generate_recommendations(repeated)
+        }
+    
+    def _generate_recommendations(self, repeated: Dict) -> List[Dict]:
+        """
+        Generate recommendations based on repeated questions.
+        
+        Returns:
+            List of recommendation dictionaries
+        """
+        recommendations = []
+        
+        for key, data in repeated.items():
+            normalized = data["normalized"]
+            count = data["count"]
+            
+            # Check if this looks like a system test
+            test_indicators = [
+                "test", "testing", "are you working", "can you hear me",
+                "hello", "hi there", "status", "are you alive"
+            ]
+            is_test = any(ind in normalized for ind in test_indicators)
+            
+            if is_test:
+                recommendations.append({
+                    "type": "system_test",
+                    "question": data["original"],
+                    "occurrences": count,
+                    "action": "consider adding skill to detect and respond to system tests",
+                    "priority": "low"
+                })
+            else:
+                recommendations.append({
+                    "type": "skill_candidate",
+                    "question": data["original"],
+                    "occurrences": count,
+                    "action": f"consider creating skill for: {normalized}",
+                    "priority": "medium"
+                })
+        
+        return recommendations
+    
+    async def run_dream_cycle(self) -> Dict:
+        """
+        Run a complete dream cycle (called during scheduled dream time).
+        
+        Returns:
+            Results of dream cycle execution
+        """
+        print("[DreamCycle] Starting dream cycle")
+        
+        results = {
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "tasks": {}
+        }
+        
+        # 1. Detect repeated questions
+        repeated_result = await self.detect_repeated_questions(threshold=3)
+        results["tasks"]["repeated_question_detection"] = repeated_result
+        
+        # 2. Organize memories (staleness tagging)
+        stale_result = await self.tag_stale_memories(threshold_days=14)
+        results["tasks"]["staleness_detection"] = stale_result
+        
+        # 3. Archive low-confidence memories
+        archive_result = await self.archive_low_confidence_memories(
+            confidence_threshold=0.3,
+            age_days=90
+        )
+        results["tasks"]["low_confidence_archival"] = archive_result
+        
+        # 4. Update health metrics
+        metrics_result = await self.update_memory_health_metrics()
+        results["tasks"]["health_metrics_update"] = metrics_result
+        
+        results["completed_at"] = datetime.now(timezone.utc).isoformat()
+        results["summary"] = {
+            "repeated_questions_found": repeated_result.get("repeated_questions", 0),
+            "stale_memories_tagged": stale_result.get("tagged_stale", 0),
+            "low_confidence_archived": archive_result.get("archived", 0),
+        }
+        
+        print(f"[DreamCycle] Dream cycle complete: {results['summary']}")
+        
+        return results

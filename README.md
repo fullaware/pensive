@@ -15,6 +15,26 @@ The key insight from the article is that to move from forgetful chatbots to trul
 
 ## Features
 
+### Agentic Platform Features
+
+#### Self-Building Skills
+- **Natural Language Skill Creation**: Users can say "build skill that searches Zen" and the LLM generates the skill
+- **Skill Activation**: Skills are created deactivated by default; users activate with "activate skill xyz"
+- **Skill Management**: List, activate, deactivate skills via `/skill` commands or natural language
+- **Safe Execution**: Skills run in a sandboxed environment with restricted imports and timeouts
+
+#### Telegram Integration
+- **Multi-User Support**: Each Telegram user gets their own isolated agent session
+- **Natural Language Commands**: "never use emojis" or "use short responses" updates preferences
+- **Timezone Awareness**: Agent respects user's timezone for scheduled events
+- **Commands**: `/start`, `/help`, `/skill`, `/status`, `/dream`
+
+#### Dream Mode (Sleep Mode)
+- **Scheduled Execution**: Runs automatically at 2 AM user's local timezone
+- **Memory Organization**: Organizes and compresses memories during scheduled "dream" time
+- **Pattern Detection**: Identifies repeated questions and suggests skill creation
+- **Manual Trigger**: Users can trigger dream mode manually with `/dream`
+
 ### Core Memory Systems
 - **Short-Term Memory**: Session history and conversation context
 - **Episodic Memory**: Vector search against past events
@@ -318,17 +338,45 @@ COMPRESS_AFTER_DAYS=30                 # Compress episodic memories after this m
 
 # Quality Metrics Configuration
 METRICS_ENABLED=true                   # Enable memory quality metrics collection
+
+# Telegram Configuration
+# Get your bot token from @BotFather on Telegram
+# Leave empty to disable Telegram integration
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_UPDATE_METHOD=polling         # polling or webhook
 ```
 
 ## Usage
 
+### Quick Start with Docker (Recommended for 24/7 Operation)
+
+```bash
+# Build and start the system (runs 24/7 with Telegram polling)
+docker compose up -d --build
+
+# View logs
+docker compose logs -f pensive-api
+
+# Stop the system
+docker compose down
+
+# Restart the system
+docker compose restart
+```
+
+The API will be available at `http://localhost:8000`.
+
 ### CLI Mode
 
 ```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Start the CLI interface
 python main.py
 ```
 
-### REST API Mode
+### REST API Mode (Standalone)
 
 Start the API server:
 
@@ -336,17 +384,12 @@ Start the API server:
 # Activate virtual environment
 source venv/bin/activate
 
-# Start the API server
+# Start the API server (with Telegram gateway if BOT_TOKEN is set)
 uvicorn api.routes:app --host 0.0.0.0 --port 8000
+
+# Or start just the Telegram gateway
+python start_telegram.py
 ```
-
-Or use Docker Compose:
-
-```bash
-docker-compose up -d
-```
-
-The API will be available at `http://localhost:8000`.
 
 #### OpenAI-Compatible Endpoints
 
@@ -445,6 +488,12 @@ agents/
 │   └── time_tracking.py  # Time tracking
 ├── agent/                 # Agent modules
 │   ├── __init__.py
+│   ├── agent.py          # Base agent class with timezone awareness
+│   ├── telegram_gateway.py  # Telegram bot gateway (python-telegram-bot v22)
+│   ├── intent_router.py  # Natural language intent detection
+│   ├── command_executor.py  # Command execution with safe executor
+│   ├── skills_manager.py  # Skills registration and management
+│   ├── dream_scheduler.py  # Timezone-aware dream mode scheduler
 │   └── orchestrator.py   # Main orchestrator with LLM fact detection
 ├── utils/                 # Utility modules
 │   ├── __init__.py
