@@ -27,13 +27,13 @@ class QueryRouter:
                 - filters: Optional filters for memory systems
         """
         system_prompt = """You are an intelligent query router. Analyze the user's query and determine:
-1. The intent type (fact, task, time, conversation, location, other)
+1. The intent type (fact, task, time, conversation, location, web_search, other)
 2. The key information needed to answer the query
 3. Any filters or context needed
 
 Respond in JSON format with:
 {
-    "intent": "fact|task|time|conversation|location|other",
+    "intent": "fact|task|time|conversation|location|web_search|other",
     "query": "query for memory lookup",
     "confidence": 0.0-1.0,
     "filters": {"optional": "filters for memory systems"},
@@ -49,6 +49,17 @@ Examples:
 - "Tell me about yesterday" -> intent: conversation, query: "yesterday"
 - "What projects have we worked on?" -> intent: fact, query: "projects"
 - "Tell me about our current work?" -> intent: fact, query: "current work"
+- "Search the web for MongoDB vector search" -> intent: web_search, query: "MongoDB vector search"
+- "Look up Python asyncio tutorials" -> intent: web_search, query: "Python asyncio tutorials"
+- "Google how to deploy Docker containers" -> intent: web_search, query: "how to deploy Docker containers"
+- "Find information about Kubernetes networking" -> intent: web_search, query: "Kubernetes networking"
+- "What's the latest news on AI?" -> intent: web_search, query: "latest news on AI"
+
+WEB SEARCH INDICATORS (should be routed to web_search intent):
+- "search the web for", "search for", "look up", "google", "find online"
+- "what's the latest", "current news", "recent developments"
+- Any query asking for real-time or up-to-date information from the internet
+- Any query the user explicitly wants searched online
 
 TIME-RELATED QUERY INDICATORS (should be routed to time intent):
 - "what time is it", "current time", "now", "what's the time"
@@ -154,6 +165,10 @@ TIME-RELATED QUERY INDICATORS (should be routed to time intent):
 
         elif intent["intent"] == "conversation":
             # For conversation queries, use session context
+            return intent["query"] or user_query
+
+        elif intent["intent"] == "web_search":
+            # For web search queries, extract the search topic
             return intent["query"] or user_query
 
         else:

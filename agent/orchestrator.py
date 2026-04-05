@@ -112,10 +112,22 @@ class AgenticOrchestrator:
         intent = routing["intent"]
         self.logger.log_stage("intent_complete", {"intent": intent.get("intent", "unknown")})
 
+        # Handle web_search intent - execute skill and feed results to LLM
+        search_results = None
+        if intent.get("intent") == "web_search":
+            self.logger.log_stage("web_search", {"search_query": routing.get("query", user_query)})
+            search_results = await self._execute_web_search(routing.get("query", user_query))
+            self.logger.log_stage("web_search_complete", {"results_length": len(search_results)})
+
         # Gather information from memory systems
         self.logger.log_stage("memory_gathering", {"memory_systems": routing.get("memory_systems", [])})
         memories = await self._gather_memories(routing, user_query, session_id)
         self.logger.log_stage("memory_complete", {"sources": memories.get("sources", [])})
+
+        # Inject web search results into memories if available
+        if search_results:
+            memories["retrieved"]["web_search"] = search_results
+            memories["sources"].append("web search")
 
         # Build system prompt with user preferences
         self.logger.log_stage("prompt_building", {"memories_count": len(memories.get("retrieved", {}))})
@@ -467,6 +479,23 @@ class AgenticOrchestrator:
             }
         }
 
+    async def _execute_web_search(self, search_query: str) -> str:
+        """Execute the web_search skill to search the web via SearXNG.
+
+        Args:
+            search_query: The search query extracted from user intent
+
+        Returns:
+            Formatted search results as a string
+        """
+        try:
+            from skills.system.web_search import execute as web_search_execute
+            results = await web_search_execute(search_query)
+            return results
+        except Exception as e:
+            print(f"Error executing web search: {e}")
+            return f"Web search failed: {str(e)}"
+
     async def _build_system_prompt(self, memories: Dict) -> str:
         """Build a system prompt using user preferences and memories.
 
@@ -558,6 +587,12 @@ class AgenticOrchestrator:
             
             memory_context.append("")
             memory_context.append("IMPORTANT: All timestamps above are stored in MongoDB as UTC ISODate. Use the current UTC time as your reference point for time-based reasoning.")
+
+        if memories.get("retrieved", {}).get("web_search"):
+            web_results = memories["retrieved"]["web_search"]
+            memory_context.append("\n=== WEB SEARCH RESULTS ===")
+            memory_context.append(web_results)
+            memory_context.append("\nINSTRUCTION: The above are web search results. Summarize the key findings in a clear, helpful way for the user. Include relevant URLs when citing sources. If the results don't contain useful information, let the user know.")
 
         if memory_context:
             return f"{base_prompt}\n\n## Context:\n" + "\n".join(memory_context)
