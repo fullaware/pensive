@@ -16,33 +16,46 @@ Pensive is a self-hosted, agentic memory platform that runs 24/7 as an intellige
 ┌─────────────────────────────────────────────────────────────┐
 │                     Pensive Agentic Platform                 │
 ├─────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │
-│  │  API Server  │  │  Telegram    │  │   Automated      │   │
-│  │  (Port 8000) │  │  Gateway     │  │   Manager        │   │
-│  └──────────────┘  └──────────────┘  └──────────────────┘   │
-│         │                 │                  │                │
-│         └─────────────────┴──────────────────┘                │
-│                           │                                  │
-│                   ┌───────▼───────┐                          │
-│                   │  Query Router │                          │
-│                   └───────┬───────┘                          │
-│                           │                                  │
-│    ┌──────────────────────┼──────────────────────┐          │
-│    │                      │                      │          │
-│ ┌──▼──┐               ┌──▼──┐               ┌──▼──┐        │
-│ │Short│               │Epi- │               │Seman│        │
-│ │Term │               │sodic│               │tic  │        │
-│ │Mem  │               │Mem  │               │Mem  │        │
-│ └─────┘               └─────┘               └─────┘        │
-│    │                      │                      │          │
-│    └──────────────────────┼──────────────────────┘          │
-│                           │                                  │
-│                  ┌────────▼────────┐                        │
-│                  │  MongoDB (with   │                        │
-│                  │   Vector Search)│                        │
-│                  └─────────────────┘                        │
+│                                                              │
+│  Docker Service: pensive-api        Docker Service:          │
+│  ┌──────────────┐                   pensive-telegram         │
+│  │  API Server  │◄── HTTP ──────── ┌──────────────┐         │
+│  │  (Port 8000) │  /api/v1/query   │  Telegram    │         │
+│  │  main.py     │                  │  Gateway     │         │
+│  └──────┬───────┘                  │  start_      │         │
+│         │                          │  telegram.py │         │
+│         │                          └──────────────┘         │
+│         │                                                    │
+│  ┌──────▼───────┐  ┌──────────────────┐                    │
+│  │  Query Router │  │   Automated      │                    │
+│  └──────┬───────┘  │   Manager        │                    │
+│         │          └──────────────────┘                    │
+│         │                                                    │
+│    ┌────┼────────────────────────────┐                      │
+│    │    │                            │                      │
+│ ┌──▼──┐ ┌──▼──┐               ┌──▼──┐                      │
+│ │Short│ │Epi- │               │Seman│                      │
+│ │Term │ │sodic│               │tic  │                      │
+│ │Mem  │ │Mem  │               │Mem  │                      │
+│ └─────┘ └─────┘               └─────┘                      │
+│    │       │                      │                          │
+│    └───────┼──────────────────────┘                          │
+│            │                                                 │
+│   ┌────────▼────────┐                                       │
+│   │  MongoDB (with   │                                       │
+│   │   Vector Search) │                                       │
+│   └─────────────────┘                                       │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### Service Separation (Critical)
+
+The system runs as **two separate Docker services**:
+
+1. **`pensive-api`** (`main.py`) — REST API server only. Does NOT start any Telegram bot.
+2. **`pensive-telegram`** (`start_telegram.py`) — Telegram bot only. Forwards messages to the API via HTTP.
+
+**Why separate?** Telegram's `getUpdates` API only allows ONE polling connection per bot token. If both services try to poll, you get `Conflict: terminated by other getUpdates request`. This was a hard-won lesson — never start Telegram polling from `main.py`.
 
 ## Development Philosophy
 
@@ -226,8 +239,12 @@ await agent.get_timezone()      # Returns timezone string
 2. **Embedding Dimensions**: Must match the embedding model output (check `EMBEDDING_DIMENSIONS`)
 3. **Vector Indexes**: Need to be recreated if embedding dimensions change
 4. **Skill Imports**: Skills run in sandbox - only allow safe imports (httpx, json, asyncio)
-5. **Timezones**: Always store timestamps as UTC in MongoDB, convert to local time only for display
-6. **Telegram Polling**: Use async polling mode, not blocking `run_polling()`
+5. **Timezones**: Always store timestamps as UTC in MongoDB, convert to local time only for display. When comparing datetimes from MongoDB with `datetime.now(timezone.utc)`, ensure the MongoDB timestamp is timezone-aware first: `if ts.tzinfo is None: ts = ts.replace(tzinfo=timezone.utc)`
+6. **Telegram Polling — ONE instance only**: Telegram's `getUpdates` API allows only ONE polling connection per bot token. The `pensive-telegram` service is the ONLY place that should poll. Never start Telegram from `main.py` or any other service. If you see `Conflict: terminated by other getUpdates request`, another instance is polling.
+7. **Telegram Bot Lifecycle**: Use `application.run_polling()` (the echobot pattern) — it's a single blocking call that handles initialize → start → poll → stop → shutdown. For async setup (like MongoDB), use `post_init` and `post_shutdown` hooks on `ApplicationBuilder`. Do NOT use manual `initialize()` → `start()` → `start_polling()` — it doesn't handle graceful shutdown properly.
+8. **Telegram Markdown Parsing**: Never use `parse_mode="Markdown"` with dynamic content. Error messages, timestamps, and user-generated content can contain backticks, underscores, and angle brackets that break Telegram's Markdown parser, causing `BadRequest: Can't parse entities`. Use plain text instead.
+9. **BSON ObjectId Serialization**: MongoDB documents contain `bson.ObjectId` which Pydantic/FastAPI can't serialize to JSON. Use `_sanitize_bson()` in `api/routes.py` to recursively convert ObjectIds to strings before returning API responses.
+10. **Docker Service Communication**: The `pensive-telegram` service reaches the API via Docker's internal DNS at `http://pensive-api:8000`. This is set via the `PENSIVE_API_URL` environment variable in docker-compose.yml.
 
 ## Next Steps for the Next Agent
 
@@ -237,3 +254,10 @@ await agent.get_timezone()      # Returns timezone string
 4. Identify 1-2 improvements that would add the most value
 5. Implement with proper testing
 6. Update AGENT.md with any new patterns or guidelines
+
+### Known Issues to Address
+
+- **API `/api/v1/query` response model**: The `QueryResponse` model's `memories: Dict[str, Any]` field can contain nested MongoDB types. The `_sanitize_bson()` helper handles this, but a more robust solution would be to define proper Pydantic models for the memory response.
+- **Telegram command handlers**: The `/skill`, `/status`, and `/dream` commands create `BaseAgent` instances directly in the Telegram service. These work for simple operations but bypass the API. Consider routing all operations through the API for consistency.
+- **Error handling in Telegram**: The bot currently has no PTB error handler registered (`application.add_error_handler()`). Unhandled exceptions are logged but not reported to the user gracefully.
+- **Telegram message chunking**: Long LLM responses are split at 4000 characters without regard for word boundaries or code blocks. Consider smarter splitting.

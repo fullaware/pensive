@@ -24,10 +24,14 @@ The key insight from the article is that to move from forgetful chatbots to trul
 - **Safe Execution**: Skills run in a sandboxed environment with restricted imports and timeouts
 
 #### Telegram Integration
+- **Dedicated Telegram Service**: Runs as a separate Docker container (`pensive-telegram`) using the python-telegram-bot echobot pattern with `application.run_polling()`
+- **API-Backed Conversations**: Natural language messages are forwarded to the Pensive API (`/api/v1/query`) via HTTP, enabling full LLM-powered conversations through Telegram
+- **User Authorization**: Configurable `TELEGRAM_ALLOWED_USER_IDS` restricts bot access; unauthorized attempts are logged and the bot owner is notified
 - **Multi-User Support**: Each Telegram user gets their own isolated agent session
 - **Natural Language Commands**: "never use emojis" or "use short responses" updates preferences
 - **Timezone Awareness**: Agent respects user's timezone for scheduled events
-- **Commands**: `/start`, `/help`, `/skill`, `/status`, `/dream`
+- **Commands**: `/start` (shows user ID), `/help`, `/skill`, `/status`, `/dream`
+- **User Onboarding**: `/start` returns the user's numeric Telegram ID for adding to `TELEGRAM_ALLOWED_USER_IDS`
 
 #### Dream Mode (Sleep Mode)
 - **Scheduled Execution**: Runs automatically at 2 AM user's local timezone
@@ -344,6 +348,8 @@ METRICS_ENABLED=true                   # Enable memory quality metrics collectio
 # Leave empty to disable Telegram integration
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_UPDATE_METHOD=polling         # polling or webhook
+TELEGRAM_ALLOWED_USER_IDS=             # Comma-separated Telegram user IDs (empty = allow all)
+TELEGRAM_BOT_OWNER_ID=                 # Bot owner's Telegram user ID (receives unauthorized access alerts)
 ```
 
 ## Usage
@@ -356,6 +362,7 @@ docker compose up -d --build
 
 # View logs
 docker compose logs -f pensive-api
+docker compose logs -f pensive-telegram
 
 # Stop the system
 docker compose down
@@ -365,6 +372,26 @@ docker compose restart
 ```
 
 The API will be available at `http://localhost:8000`.
+
+#### Docker Services
+
+| Service | Description | Entry Point |
+|---------|-------------|-------------|
+| `pensive-api` | REST API server (FastAPI/Uvicorn on port 8000) | `python main.py` |
+| `pensive-telegram` | Telegram bot gateway (polls Telegram, forwards to API) | `python start_telegram.py` |
+
+**Important**: The Telegram bot runs as a **separate service** from the API. It forwards natural language messages to `http://pensive-api:8000/api/v1/query` via Docker's internal network. Only one instance of `pensive-telegram` should run at a time to avoid Telegram polling conflicts.
+
+#### Telegram Bot Setup
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) on Telegram
+2. Set `TELEGRAM_BOT_TOKEN` in your `.env` file
+3. Start the services: `docker compose up -d --build`
+4. Send `/start` to your bot — it will reply with your numeric user ID
+5. Add your user ID to `TELEGRAM_ALLOWED_USER_IDS` in `.env`
+6. Optionally set `TELEGRAM_BOT_OWNER_ID` to receive unauthorized access alerts
+7. Restart: `docker compose restart pensive-telegram`
+8. Send any text message to chat with the LLM through Telegram
 
 ### CLI Mode
 
