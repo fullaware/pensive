@@ -19,7 +19,7 @@ services:
       - VECTOR_SEARCH_LIMIT=${VECTOR_SEARCH_LIMIT:-5}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_UPDATE_METHOD=${TELEGRAM_UPDATE_METHOD:-polling}
-      - SEARXNG_URI=${SEARXNG_URI:-http://zen.home.fullaware.com:8383}
+      - SEARXNG_URI=${SEARXNG_URI:-http://server.hostname.com:8383}
       - PENSEIVE_MODE=api
     env_file:
       - .env

@@ -8,7 +8,7 @@ import json
 from urllib.parse import quote_plus
 
 
-SEARXNG_URI = os.getenv("SEARXNG_URI", "http://zen.home.fullaware.com:8383")
+SEARXNG_URI = os.getenv("SEARXNG_URI", "http://server.hostname.com:8383")
 
 
 async def execute(query: str, num_results: int = 5) -> str:
