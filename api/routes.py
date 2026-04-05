@@ -222,9 +222,25 @@ async def custom_query(
     """Custom query endpoint."""
     try:
         result = await orchestrator.process_query(request.query, request.session_id)
+        # Sanitize MongoDB ObjectIds in the result to make it JSON-serializable
+        result = _sanitize_bson(result)
         return QueryResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _sanitize_bson(obj):
+    """Recursively convert bson.ObjectId and other non-serializable types to strings."""
+    from bson import ObjectId
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {k: _sanitize_bson(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_sanitize_bson(item) for item in obj]
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    return obj
 
 
 @app.get("/api/v1/facts")

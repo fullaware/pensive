@@ -233,6 +233,10 @@ class AutomatedMemoryManager:
             content = memory.get("content", "")
             timestamp = memory.get("timestamp", datetime.now(timezone.utc))
 
+            # Ensure timestamp is timezone-aware for comparison
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+
             # Calculate how old this memory is
             age_days = (datetime.now(timezone.utc) - timestamp).days
 

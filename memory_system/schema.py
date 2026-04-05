@@ -12,6 +12,7 @@ COLLECTION_TASKS = "tasks"
 COLLECTION_TIME_TRACKING = "time_tracking"
 COLLECTION_REMINDERS = "reminders"
 COLLECTION_SYSTEM_PROMPTS = "system_prompts"
+COLLECTION_UNAUTHORIZED_ACCESS = "unauthorized_access"
 
 
 # ===== SCHEMA DEFINITIONS =====
@@ -270,6 +271,36 @@ class ReminderSchema:
         """Create an update document for a reminder."""
         updates["updated_at"] = datetime.now(timezone.utc)
         return {"$set": updates}
+
+
+class UnauthorizedAccessSchema:
+    """Schema for tracking unauthorized Telegram access attempts."""
+
+    @staticmethod
+    def create(
+        user_id: int,
+        username: Optional[str] = None,
+        message_text: Optional[str] = None,
+        attempt_time: Optional[datetime] = None,
+    ) -> Dict:
+        """Create a new unauthorized access record.
+
+        Args:
+            user_id: Telegram user ID
+            username: Telegram username (if available)
+            message_text: Content of the message (for context)
+            attempt_time: Timestamp of the attempt (defaults to now)
+        """
+        if attempt_time is None:
+            attempt_time = datetime.now(timezone.utc)
+        return {
+            "type": "unauthorized_access",
+            "user_id": user_id,
+            "username": username,
+            "message_text": message_text,
+            "attempt_time": attempt_time,
+            "created_at": datetime.now(timezone.utc),
+        }
 
 
 class SystemPromptSchema:
