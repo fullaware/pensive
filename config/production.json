@@ -1,0 +1,40 @@
+{
+  "mongodb": {
+    "uri": "${MONGODB_URI}",
+    "database": "${MONGODB_DB}"
+  },
+  "llm": {
+    "uri": "${LLM_URI}",
+    "embedding_uri": "${LLM_EMBEDDING_URI}",
+    "model": "${LLM_MODEL}",
+    "embedding_model": "${LLM_EMBEDDING_MODEL}"
+  },
+  "memory": {
+    "short_term_size": "${SHORT_TERM_MEMORY_SIZE}",
+    "episodic_limit": "${EPISODIC_MEMORY_LIMIT}",
+    "vector_search_limit": "${VECTOR_SEARCH_LIMIT}"
+  },
+  "embedding": {
+    "dimensions": "${EMBEDDING_DIMENSIONS}"
+  },
+  "cleanup": {
+    "interval_hours": "${MEMORY_CLEANUP_INTERVAL_HOURS}",
+    "max_system_prompt_versions": "${MAX_SYSTEM_PROMPT_VERSIONS}",
+    "staleness_threshold_days": "${STALENESS_DAYS_THRESHOLD}",
+    "auto_tag_enabled": "${AUTO_TAG_ENABLED}",
+    "low_confidence_threshold": "${LOW_CONFIDENCE_THRESHOLD}",
+    "auto_archive_age_days": "${AUTO_ARCHIVE_AGE_DAYS}"
+  },
+  "telegram": {
+    "bot_token": "${TELEGRAM_BOT_TOKEN}",
+    "update_method": "${TELEGRAM_UPDATE_METHOD}",
+    "poll_interval": "${TELEGRAM_POLL_INTERVAL}",
+    "allowed_user_ids": "${TELEGRAM_ALLOWED_USER_IDS}",
+    "bot_owner_id": "${TELEGRAM_BOT_OWNER_ID}"
+  },
+  "retention": {
+    "facts_archived_days": 90,
+    "episodic_archived_days": 90,
+    "system_prompts_archived_days": 180
+  }
+}

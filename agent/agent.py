@@ -22,8 +22,8 @@ from memory_system import (
     COLLECTION_EPISODIC,
     COLLECTION_FACTS,
 )
-from utils import LLMClient, EmbeddingClient
-from time_management import TaskManager, ReminderManager, TimeTracker
+from services import LLMClient, EmbeddingClient
+from timemgmt import TaskManager, ReminderManager, TimeTracker
 
 
 class AgentLogger:

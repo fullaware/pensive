@@ -59,4 +59,4 @@ services:
     depends_on:
       - pensive-api
     command: >
-      python start_telegram.py
+      python gateway_telegram.py

@@ -13,7 +13,14 @@ class LLMClient:
         self.base_url = Config.LLM_URI
         self.model = Config.LLM_MODEL
         # Increased timeout for LLM API calls
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=300.0))
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=10.0,
+                read=300.0,
+                write=30.0,
+                pool=10.0
+            )
+        )
 
     async def generate(
         self,
@@ -90,7 +97,14 @@ class EmbeddingClient:
         self.model = Config.LLM_EMBEDDING_MODEL
         self.dimensions = Config.EMBEDDING_DIMENSIONS
         # Increased timeout for embedding generation (read timeout specifically for slow responses)
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=300.0))
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=10.0,
+                read=300.0,
+                write=30.0,
+                pool=10.0
+            )
+        )
 
     async def generate_embedding(self, text: str) -> Optional[List[float]]:
         """Generate an embedding for the given text.

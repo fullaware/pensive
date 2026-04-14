@@ -4,7 +4,7 @@ import json
 import re
 from typing import List, Dict, Optional
 from memory_system.config import Config
-from utils.llm import LLMClient
+from .llm_service import LLMClient
 
 
 class QueryRouter:

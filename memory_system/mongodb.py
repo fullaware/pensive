@@ -1,12 +1,13 @@
 # MongoDB connection and utilities
 """MongoDB connection and vector search utilities."""
-from typing import Optional
+from typing import Optional, Dict
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 from .config import Config
 import logging
 import time
+from datetime import timedelta
 
 # Configure logging for MongoDB queries
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +37,8 @@ class MongoDB:
                 await cls._client.admin.command("ping")
                 if cls._logging_enabled:
                     logger.info("Connected to MongoDB successfully")
+                # Create TTL indexes for automatic archival expiration
+                await cls._create_ttl_indexes()
             except PyMongoError as e:
                 raise ConnectionError(f"Failed to connect to MongoDB: {e}")
 
@@ -130,6 +133,75 @@ class MongoDB:
             else:
                 result.append(item)
         return result
+
+    @classmethod
+    async def _create_indexes(cls) -> None:
+        """Create all indexes for the database.
+        
+        This includes TTL indexes, vector indexes, and compound indexes.
+        """
+        if cls._db is None:
+            return
+            
+        try:
+            # TTL indexes for automatic archival expiration
+            # Facts: Keep archived data for 90 days
+            await cls._db.facts.create_index(
+                "archived_at",
+                expireAfterSeconds=timedelta(days=90).total_seconds(),
+                name="ttl_archived_facts"
+            )
+            if cls._logging_enabled:
+                logger.info("TTL index created for archived facts (90 days)")
+            
+            # Episodic memories: Keep archived data for 90 days
+            await cls._db.episodic_memories.create_index(
+                "archived_at",
+                expireAfterSeconds=timedelta(days=90).total_seconds(),
+                name="ttl_archived_episodic"
+            )
+            if cls._logging_enabled:
+                logger.info("TTL index created for archived episodic memories (90 days)")
+            
+            # System prompts: Keep archived data for 180 days
+            await cls._db.system_prompts.create_index(
+                "archived_at",
+                expireAfterSeconds=timedelta(days=180).total_seconds(),
+                name="ttl_archived_system_prompts"
+            )
+            if cls._logging_enabled:
+                logger.info("TTL index created for archived system prompts (180 days)")
+            
+            # Compound indexes for common query patterns
+            # Facts: Fast lookup by key with version sorting
+            await cls._db.facts.create_index(
+                [("key", 1), ("version", -1)],
+                name="idx_facts_key_version"
+            )
+            if cls._logging_enabled:
+                logger.info("Compound index created for facts: key + version")
+            
+            # System prompts: Fast lookup for bootstrap prompts
+            await cls._db.system_prompts.create_index(
+                [("name", 1), ("is_bootstrap", 1), ("active", 1), ("version", -1)],
+                name="idx_system_prompts_bootstrap"
+            )
+            if cls._logging_enabled:
+                logger.info("Compound index created for system_prompts: name + is_bootstrap + active + version")
+            
+        except Exception as e:
+            if cls._logging_enabled:
+                logger.error(f"Error creating indexes: {e}")
+    
+    @classmethod
+    async def _create_ttl_indexes(cls) -> None:
+        """Create TTL indexes for automatic archival expiration.
+        
+        This ensures archived data is automatically deleted after the retention period.
+        
+        Deprecated: Use _create_indexes() instead.
+        """
+        await cls._create_indexes()
 
     @classmethod
     async def create_vector_index(

@@ -245,6 +245,7 @@ class SystemPromptsManager:
         """Update the bootstrap prompt with new content.
         
         Creates a new version of the bootstrap prompt, archiving the previous version.
+        Enforces a maximum of 5 versions - older versions are archived.
         This allows for version tracking and rollback capability.
         
         Args:
@@ -284,7 +285,45 @@ class SystemPromptsManager:
         )
         
         result = await self.collection.insert_one(prompt_doc)
+        
+        # Enforce 5-version limit - archive older versions
+        await self._enforce_version_limit(name="bootstrap", max_versions=5)
+        
         return str(result.inserted_id)
+    
+    async def _enforce_version_limit(self, name: str, max_versions: int = 5) -> int:
+        """Enforce maximum number of versions for a prompt name.
+        
+        Args:
+            name: Prompt name to enforce limit on
+            max_versions: Maximum number of versions to keep
+            
+        Returns:
+            Number of versions archived
+        """
+        # Find all versions for this name, sorted by version (newest first)
+        cursor = self.collection.find(
+            {"name": name, "is_bootstrap": True}
+        ).sort("version", -1)
+        
+        all_versions = await cursor.to_list(length=None)
+        
+        archived_count = 0
+        for i, prompt in enumerate(all_versions):
+            if i >= max_versions:
+                # Archive versions beyond the limit
+                from bson import ObjectId
+                await self.collection.update_one(
+                    {"_id": ObjectId(prompt["_id"])},
+                    {"$set": {
+                        "active": False,
+                        "archived_at": datetime.now(timezone.utc),
+                        "archive_reason": f"Archived: exceeded version limit (kept {max_versions} most recent)"
+                    }}
+                )
+                archived_count += 1
+        
+        return archived_count
 
     async def revert_to_version(self, version: int) -> bool:
         """Revert to a previous version of the bootstrap prompt.

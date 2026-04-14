@@ -67,16 +67,12 @@ class FactSchema:
             "updated_at": now,
             "metadata": metadata or {},
             "related_memories": related_memories or [],
-            "provenance": {
-                "source": source,
-                "confidence_explanation": confidence_explanation,
-                "human_verified": human_verified,
-                "source_weight": source_weight,
-            },
-            "temporal": {
-                "expires_at": expires_at,
-                "conflict_status": conflict_status,
-            },
+            "source": source,
+            "confidence_explanation": confidence_explanation,
+            "human_verified": human_verified,
+            "source_weight": source_weight,
+            "expires_at": expires_at,
+            "conflict_status": conflict_status,
         }
         if embedding is not None:
             doc["embedding"] = embedding
@@ -138,18 +134,8 @@ class EpisodicMemorySchema:
             "event_type": event_type,
             "timestamp": now,
             "context": context or {},
-            "provenance": {
-                "source": source,
-                "created_at": now,
-            },
-            "temporal": {},
+            "source": source,
             "related_facts": related_facts or [],
-            "timeRange": {
-                "hour": now.strftime("%Y-%m-%d %H:00"),
-                "day": now.strftime("%Y-%m-%d"),
-                "week": f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}",
-                "month": now.strftime("%Y-%m"),
-            },
         }
         return doc
 
@@ -336,7 +322,7 @@ class SystemPromptSchema:
             "type": "system_prompt",
             "name": name,
             "prompt": prompt,
-            "type": prompt_type,
+            "prompt_type": prompt_type,
             "version": version,
             "active": active,
             "metadata": metadata or {},

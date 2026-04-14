@@ -11,7 +11,7 @@ from memory_system import (
     EpisodicMemory,
     Config
 )
-from utils import LLMClient
+from .llm_service import LLMClient
 
 
 class Bootstrapper:

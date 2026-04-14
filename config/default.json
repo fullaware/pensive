@@ -1,0 +1,40 @@
+{
+  "mongodb": {
+    "uri": "mongodb://localhost:27017/",
+    "database": "agentic_memory"
+  },
+  "llm": {
+    "uri": "http://localhost:8080",
+    "embedding_uri": "http://localhost:1234/v1",
+    "model": "default-model",
+    "embedding_model": "default-embedding"
+  },
+  "memory": {
+    "short_term_size": 10,
+    "episodic_limit": 100,
+    "vector_search_limit": 5
+  },
+  "embedding": {
+    "dimensions": 1024
+  },
+  "cleanup": {
+    "interval_hours": 24,
+    "max_system_prompt_versions": 5,
+    "staleness_threshold_days": 14,
+    "auto_tag_enabled": true,
+    "low_confidence_threshold": 0.3,
+    "auto_archive_age_days": 90
+  },
+  "telegram": {
+    "bot_token": "",
+    "update_method": "polling",
+    "poll_interval": 1.0,
+    "allowed_user_ids": "",
+    "bot_owner_id": ""
+  },
+  "retention": {
+    "facts_archived_days": 90,
+    "episodic_archived_days": 90,
+    "system_prompts_archived_days": 180
+  }
+}

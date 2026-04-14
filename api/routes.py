@@ -19,7 +19,7 @@ from memory_system import (
     SystemPromptsManager,
 )
 from agent import AgenticOrchestrator
-from utils import LLMClient, EmbeddingClient
+from services import LLMClient, EmbeddingClient
 from api.models import (
     ChatCompletionRequest,
     ChatCompletionResponse,

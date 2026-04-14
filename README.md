@@ -18,7 +18,7 @@ The key insight from the article is that to move from forgetful chatbots to trul
 ### Agentic Platform Features
 
 #### Self-Building Skills
-- **Natural Language Skill Creation**: Users can say "build skill that searches Zen" and the LLM generates the skill
+- **Natural Language Skill Creation**: Users can say "build skill that searches the web" and the LLM generates the skill
 - **Skill Activation**: Skills are created deactivated by default; users activate with "activate skill xyz"
 - **Skill Management**: List, activate, deactivate skills via `/skill` commands or natural language
 - **Safe Execution**: Skills run in a sandboxed environment with restricted imports and timeouts
@@ -106,16 +106,16 @@ The system includes an automated background loop that continuously organizes and
 
 ```bash
 # Run automated memory management loop (runs every 24 hours by default)
-python scripts/run_automated_manager.py
+python -m memory_system.automated_manager
 
 # Run with custom interval
-python scripts/run_automated_manager.py --interval 6  # Run every 6 hours
+python -m memory_system.automated_manager --interval 6  # Run every 6 hours
 
 # Run once and exit (for testing or cron jobs)
-python scripts/run_automated_manager.py --one-time
+python -m memory_system.automated_manager --one-time
 
 # Using Docker
-docker-compose run pensive-api python scripts/run_automated_manager.py
+docker-compose run pensive-api python -m memory_system.automated_manager
 ```
 
 #### Configuration Options
@@ -378,7 +378,7 @@ The API will be available at `http://localhost:8000`.
 | Service | Description | Entry Point |
 |---------|-------------|-------------|
 | `pensive-api` | REST API server (FastAPI/Uvicorn on port 8000) | `python main.py` |
-| `pensive-telegram` | Telegram bot gateway (polls Telegram, forwards to API) | `python start_telegram.py` |
+| `pensive-telegram` | Telegram bot gateway (polls Telegram, forwards to API) | `python -m services.start_telegram` |
 
 **Important**: The Telegram bot runs as a **separate service** from the API. It forwards natural language messages to `http://pensive-api:8000/api/v1/query` via Docker's internal network. Only one instance of `pensive-telegram` should run at a time to avoid Telegram polling conflicts.
 
@@ -481,58 +481,85 @@ To use with OpenWebUI:
 
 ## Project Structure
 
+This project follows 12-Factor App methodology with proper configuration management:
+
 ```
-agents/
-├── .env                    # Environment variables
-├── .gitignore             # Git ignore rules
-├── requirements.txt       # Production dependencies
-├── requirements-dev.txt   # Development dependencies
-├── main.py                # CLI entry point
-├── README.md              # This file
-├── MEMORY.md              # Memory system documentation
-├── env.example            # Example environment configuration
-├── memory_system/         # Core memory modules
-│   ├── __init__.py
-│   ├── config.py         # Configuration loader
-│   ├── mongodb.py        # MongoDB connection with vector search
-│   ├── schema.py         # Database schemas with version tracking
-│   ├── short_term.py     # Short-term memory
-│   ├── episodic.py       # Episodic memory with vector search
-│   ├── semantic.py       # Semantic memory (facts with versioning)
-│   ├── system_prompts.py # System prompt management
-│   ├── router.py         # Query router with LLM intent detection
-│   ├── temporal.py       # Temporal indexing and bucketing
-│   ├── links.py          # Bidirectional memory linking
-│   ├── decay.py          # Memory decay and expiration
-│   ├── thematic.py       # Multi-level abstraction (thematic layer)
-│   ├── compression.py    # Memory compression and archiving
-│   ├── memory_metrics.py # Memory quality metrics tracking
-│   └── automated_manager.py # Automated memory management loop
-├── time_management/       # Task and time tracking
-│   ├── __init__.py
-│   ├── tasks.py          # Task management
-│   ├── reminders.py      # Reminder system
-│   └── time_tracking.py  # Time tracking
-├── agent/                 # Agent modules
-│   ├── __init__.py
-│   ├── agent.py          # Base agent class with timezone awareness
-│   ├── telegram_gateway.py  # Telegram bot gateway (python-telegram-bot v22)
-│   ├── intent_router.py  # Natural language intent detection
-│   ├── command_executor.py  # Command execution with safe executor
-│   ├── skills_manager.py  # Skills registration and management
-│   ├── dream_scheduler.py  # Timezone-aware dream mode scheduler
-│   └── orchestrator.py   # Main orchestrator with LLM fact detection
-├── utils/                 # Utility modules
+pensive/
+├── config/                # Configuration (12-Factor: Store config in environment)
+│   ├── default.json      # Default configuration (development)
+│   └── production.json   # Production configuration (uses environment variables)
+├── services/             # Shared services (replaces utils/)
 │   ├── __init__.py
 │   └── llm.py           # LLM and embedding client
-└── tests/                 # Test suite
-    ├── __init__.py
-    ├── conftest.py      # Test configuration and fixtures
-    ├── test_config.py   # Config tests
-    ├── test_router.py   # Router tests
-    ├── test_semantic_memory.py  # Semantic memory tests
-    └── test_short_term_memory.py  # Short-term memory tests
+├── timemgmt/             # Time management (replaces time_management/)
+│   ├── __init__.py
+│   ├── tasks.py         # Task management
+│   ├── reminders.py     # Reminder system
+│   └── time_tracking.py # Time tracking
+├── memory_system/        # Core memory modules
+│   ├── __init__.py
+│   ├── config.py        # Configuration loader
+│   ├── mongodb.py       # MongoDB connection with vector search
+│   ├── schema.py        # Database schemas with version tracking
+│   ├── short_term.py    # Short-term memory
+│   ├── episodic.py      # Episodic memory with vector search
+│   ├── semantic.py      # Semantic memory (facts with versioning)
+│   ├── system_prompts.py # System prompt management
+│   ├── router.py        # Query router with LLM intent detection
+│   ├── temporal.py      # Temporal indexing and bucketing
+│   ├── links.py         # Bidirectional memory linking
+│   ├── decay.py         # Memory decay and expiration
+│   ├── thematic.py      # Multi-level abstraction (thematic layer)
+│   ├── compression.py   # Memory compression and archiving
+│   ├── memory_metrics.py # Memory quality metrics tracking
+│   └── automated_manager.py # Automated memory management loop
+├── agent/                # Agent modules
+│   ├── __init__.py
+│   ├── agent.py         # Base agent class with timezone awareness
+│   ├── telegram_gateway.py # Telegram bot gateway (python-telegram-bot v22)
+│   ├── intent_router.py # Natural language intent detection
+│   ├── command_executor.py # Command execution with safe executor
+│   ├── skills_manager.py # Skills registration and management
+│   ├── dream_scheduler.py # Timezone-aware dream mode scheduler
+│   └── orchestrator.py  # Main orchestrator with LLM fact detection
+├── api/                  # API layer (FastAPI routes)
+│   ├── __init__.py
+│   ├── models.py        # Pydantic models for request/response
+│   └── routes.py        # FastAPI routes
+├── skills/               # Agent skills
+│   ├── system/          # System skills
+│   └── built/           # User-built skills
+├── tests/                # Test suite
+│   ├── __init__.py
+│   ├── conftest.py      # Test configuration and fixtures
+│   ├── test_config.py   # Config tests
+│   ├── test_router.py   # Router tests
+│   ├── test_semantic_memory.py  # Semantic memory tests
+│   └── test_short_term_memory.py  # Short-term memory tests
+├── .env                  # Environment variables (never commit to git)
+├── env.example           # Example environment configuration
+├── requirements.txt      # Production dependencies
+├── requirements-dev.txt  # Development dependencies
+├── main.py              # CLI entry point
+└── README.md            # This file
 ```
+
+### 12-Factor Compliance
+
+This project follows 12-Factor App methodology:
+
+1. **Codebase**: Single codebase tracked in version control
+2. **Dependencies**: Explicitly declared and isolated (requirements.txt)
+3. **Config**: Configuration stored in environment variables (see `config/`)
+4. **Backing Services**: MongoDB treated as a connected service
+5. **Build, Release, Run**: Separated via Docker images
+6. **Processes**: Stateless processes with sessions in MongoDB
+7. **Port Binding**: API exposed via port 8000
+8. **Concurrency**: Horizontal scaling via multiple instances
+9. **Disposability**: Fast startup and graceful shutdown
+10. **Dev/Prod Parity**: Same technology in dev and prod
+11. **Logs**: Structured logging for audit and diagnostics
+12. **Admin Processes**: One-off admin tasks via scripts
 
 ### Key Components
 
@@ -563,12 +590,12 @@ agents/
     - Current date context in system prompts
     - Fact versioning with archived history
 
-- **time_management/**: Task and time tracking
+- **timemgmt/**: Task and time tracking
   - `tasks.py`: Task management
   - `reminders.py`: Reminder system
   - `time_tracking.py`: Time tracking
 
-- **utils/**: Utility modules
+- **services/**: Shared services
   - `llm.py`: LLM and embedding client for Qwen/Qwen3-Coder-Next-GGUF model
 
 - **tests/**: Comprehensive test suite
@@ -620,7 +647,7 @@ If you change the `EMBEDDING_DIMENSIONS` configuration, you need to recreate the
 source venv/bin/activate
 
 # Recreate vector indexes
-python scripts/recreate_index.py
+python -m memory_system.mongodb recreate_indexes
 ```
 
 This will delete existing vector indexes and create new ones with the correct dimensions.

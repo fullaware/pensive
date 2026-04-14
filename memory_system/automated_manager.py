@@ -13,7 +13,7 @@ from memory_system import (
     COLLECTION_FACTS,
     COLLECTION_SYSTEM_PROMPTS,
 )
-from utils import EmbeddingClient
+from .llm_service import EmbeddingClient
 from memory_system.system_prompts import SystemPromptsManager
 
 
@@ -154,20 +154,23 @@ class AutomatedMemoryManager:
     async def enforce_system_prompt_versions(self, limit: int = 5) -> int:
         """
         Enforce maximum number of system prompt versions.
-        Archives older versions beyond the limit.
+        Keeps only the specified number of versions and deletes older ones.
+        
+        This ensures the database doesn't grow unbounded with old system prompts.
+        The TTL index on archived_at will automatically delete archived data
+        after the retention period (180 days for system prompts).
 
         Args:
-            limit: Maximum number of versions to keep
+            limit: Maximum number of versions to keep (default: 5)
 
         Returns:
-            Number of versions archived
+            Number of versions processed (archived or deleted)
         """
         print(f"[AutomatedManager] Enforcing system prompt version limit (max {limit})")
 
-        # Get all bootstrap prompts sorted by version (newest first)
         collection = db.get_collection(COLLECTION_SYSTEM_PROMPTS)
 
-        # Find all bootstrap prompts for the 'bootstrap' name
+        # Find all bootstrap prompts for the 'bootstrap' name, sorted by version (newest first)
         cursor = collection.find({
             "name": "bootstrap",
             "is_bootstrap": True
@@ -175,28 +178,32 @@ class AutomatedMemoryManager:
 
         all_prompts = await cursor.to_list(length=None)
 
-        archived_count = 0
+        processed_count = 0
         for i, prompt in enumerate(all_prompts):
-            # Skip the first `limit` versions (keep them)
+            prompt_id = prompt["_id"]
+            
             if i < limit:
-                continue
+                # Keep the first `limit` versions and ensure they are active
+                await collection.update_one(
+                    {"_id": prompt_id},
+                    {"$set": {"active": True}}
+                )
+            else:
+                # Archive older versions beyond the limit
+                await collection.update_one(
+                    {"_id": prompt_id},
+                    {"$set": {
+                        "active": False,
+                        "archived_at": datetime.now(timezone.utc),
+                        "archive_reason": f"Archived: exceeded version limit (kept {limit} most recent)"
+                    }}
+                )
+                processed_count += 1
 
-            # Archive this version
-            prompt_id = str(prompt["_id"])
-            await collection.update_one(
-                {"_id": prompt["_id"]},
-                {"$set": {
-                    "active": False,
-                    "archived_at": datetime.now(timezone.utc),
-                    "archive_reason": f"Archived: exceeded version limit (kept {limit} most recent)"
-                }}
-            )
-            archived_count += 1
+        if processed_count > 0:
+            print(f"[AutomatedManager] Processed {processed_count} old system prompt versions (archived)")
 
-        if archived_count > 0:
-            print(f"[AutomatedManager] Archived {archived_count} old system prompt versions")
-
-        return archived_count
+        return processed_count
 
     # ===== STALENESS DETECTION =====
 
@@ -527,7 +534,7 @@ class AutomatedMemoryManager:
         Returns:
             Statistics about pending tasks
         """
-        from time_management import TaskManager
+        from timemgmt import TaskManager
 
         print("[AutomatedManager] Monitoring pending tasks")
 

@@ -19,7 +19,7 @@ class EpisodicMemory:
     def embedding_client(self):
         """Lazy load embedding client."""
         if self._embedding_client is None:
-            from utils import EmbeddingClient
+            from services import EmbeddingClient
             self._embedding_client = EmbeddingClient()
         return self._embedding_client
 
