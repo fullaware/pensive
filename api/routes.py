@@ -31,8 +31,6 @@ from api.models import (
     QueryResponse,
     FactCreateRequest,
     FactResponse,
-    TaskCreateRequest,
-    TaskResponse,
     MemoryManagementRunRequest,
     MemoryManagementResponse,
     MemoryManagementStatusResponse,
@@ -312,86 +310,6 @@ async def delete_fact(
     """Delete a fact by key."""
     try:
         result = await orchestrator.semantic.delete_fact(key)
-        return {"success": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/v1/tasks")
-async def list_tasks(
-    status: str = None,
-    orchestrator: AgenticOrchestrator = Depends(get_orchestrator),
-) -> List[Dict[str, Any]]:
-    """List tasks with optional status filter."""
-    try:
-        tasks = await orchestrator.tasks.list_tasks(status=status)
-        return tasks
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/v1/tasks")
-async def create_task(
-    request: TaskCreateRequest,
-    orchestrator: AgenticOrchestrator = Depends(get_orchestrator),
-) -> TaskResponse:
-    """Create a new task."""
-    try:
-        from datetime import datetime
-        from bson import ObjectId
-        
-        task_id = await orchestrator.tasks.create_task(
-            title=request.title,
-            description=request.description,
-            status=request.status,
-            priority=request.priority,
-            tags=request.tags,
-        )
-        
-        # Get the created task to return full details
-        task = await orchestrator.tasks.get_task(task_id)
-        
-        return TaskResponse(
-            id=str(task.get("_id", task_id)),
-            title=task.get("title", request.title),
-            description=task.get("description", ""),
-            status=task.get("status", "pending"),
-            priority=task.get("priority", "medium"),
-            due_date=task.get("due_date"),
-            created_at=task.get("created_at", datetime.now(timezone.utc)).isoformat(),
-            updated_at=task.get("updated_at", datetime.now(timezone.utc)).isoformat(),
-            progress=task.get("progress", 0),
-            tags=task.get("tags", []),
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/v1/tasks/{task_id}")
-async def get_task(
-    task_id: str,
-    orchestrator: AgenticOrchestrator = Depends(get_orchestrator),
-) -> Dict[str, Any]:
-    """Get a task by ID."""
-    try:
-        task = await orchestrator.tasks.get_task(task_id)
-        if not task:
-            raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
-        return task
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/api/v1/tasks/{task_id}")
-async def delete_task(
-    task_id: str,
-    orchestrator: AgenticOrchestrator = Depends(get_orchestrator),
-) -> Dict[str, bool]:
-    """Delete a task by ID."""
-    try:
-        result = await orchestrator.tasks.delete_task(task_id)
         return {"success": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

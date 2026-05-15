@@ -43,54 +43,16 @@ The key insight from the article is that to move from forgetful chatbots to trul
 - **Short-Term Memory**: Session history and conversation context
 - **Episodic Memory**: Vector search against past events
 - **Semantic Memory**: Facts and knowledge storage (MongoDB)
-- **Time Management**: Tasks, reminders, and time tracking
 - **Query Router**: AI-powered query intention detection
 - **System Prompts**: Dynamic prompt management with user preferences
 - **REST API**: OpenAI-compatible API for integration with tools like OpenWebUI
 
 ### Advanced Memory Features
 
-#### Temporal Indexing
-- **Time-Based Bucketing**: Events are bucketed into time windows (hour/day/week/month)
-- **Efficient Range Queries**: Query memories by temporal context without scanning all embeddings
-- **Time-Aware Retrieval**: All queries include temporal context relative to "now"
-
-#### Memory Linking
-- **Bidirectional Links**: Facts and episodic memories can reference each other
-- **Graph Traversal**: Navigate relationships between memories using graph queries
-- **Automatic Linking**: Events automatically link to recently created/updated facts
-
-#### Memory Decay & Expiration
-- **Confidence Decay**: Older memories automatically get lower confidence scores
-- **Expiration Dates**: Optional expiration for ephemeral facts (e.g., current mood, weather)
-- **Auto-Archival**: Low-confidence memories are archived instead of deleted
-
 #### Multi-Level Abstraction
 - **Episodic Layer**: Raw conversation/event logs with embeddings
-- **Thematic Layer**: Grouped/clustered events (e.g., "all project discussions this month")
 - **Semantic Layer**: Individual facts with versioning
-- **Efficient Group Queries**: Answer "what have we discussed about X this month?" without re-embedding
-
-#### Memory Auditing & Provenance
-- **Source Tracking**: Track original source (conversation ID, external API, manual entry)
-- **Confidence Explanations**: Store why a memory was created and its confidence level
-- **Human Verification**: Track auto-extracted vs. user-confirmed memories
-
-#### Conflict Resolution
-- **Merge Strategies**: Latest-wins, majority-vote when multiple sources exist
-- **Disputed Status**: Automatically flag facts with low confidence for human review
-- **Version History**: Complete audit trail of fact changes
-
-#### Memory Compression
-- **Daily Summaries**: Long episodic memories are summarized into daily summaries
-- **Cost Optimization**: Archive to cheaper storage after configurable retention period
-- **Embedding-Only Storage**: Keep only embeddings for retrieval, move full content to object storage
-
-#### Memory Quality Metrics
-- **Retrieval Counts**: Track hot vs. cold memories by retrieval frequency
-- **Success Rate**: Monitor if users find what they need in retrieved memories
-- **Age Distribution**: Analyze memory age distribution for optimization
-
+  
 ### Automated Memory Management
 
 The system includes an automated background loop that continuously organizes and maintains memories:
@@ -98,9 +60,6 @@ The system includes an automated background loop that continuously organizes and
 - **Staleness Detection**: Automatically identifies and tags memories that have become outdated
 - **Memory Tagging & Organization**: Automatic tagging based on content and temporal context
 - **System Prompt Version Control**: Enforces a maximum of 5 versions, archiving older ones automatically
-- **Low Confidence Archival**: Archives memories with low confidence scores that are also old
-- **Memory Compression**: Compresses old episodic memories into daily summaries
-- **Pending Task Monitoring**: Tracks tasks that have been pending for too long and creates reminders
 
 #### Running the Automated Manager
 
@@ -118,39 +77,6 @@ python -m memory_system.automated_manager --one-time
 docker-compose run pensive-api python -m memory_system.automated_manager
 ```
 
-#### Configuration Options
-
-Add these to your `.env` file:
-
-```env
-# Automated Memory Management Configuration
-MEMORY_CLEANUP_INTERVAL_HOURS=24       # Hours between cleanup runs
-MAX_SYSTEM_PROMPT_VERSIONS=5           # Maximum system prompt versions to keep
-STALENESS_DAYS_THRESHOLD=14            # Days before content is considered stale
-AUTO_TAG_ENABLED=true                  # Enable automatic memory tagging
-LOW_CONFIDENCE_THRESHOLD=0.3           # Confidence below this gets archived
-AUTO_ARCHIVE_AGE_DAYS=90               # Age threshold for auto-archival
-
-# Temporal Configuration
-TEMPORAL_BUCKET_SIZE=day               # Time bucket size: hour, day, week, month
-
-# Memory Linking
-LINKING_ENABLED=true                   # Enable bidirectional memory linking
-
-# Compression Settings
-COMPRESSION_ENABLED=true               # Enable memory compression
-COMPRESS_AFTER_DAYS=30                 # Compress episodic memories after this many days
-
-# Quality Metrics
-METRICS_ENABLED=true                   # Enable memory quality metrics collection
-```
-
-### Time-Aware Features
-
-- **Time-Enhanced Recall**: All episodic memory queries include time context relative to "now"
-- **UTC-First Timestamps**: All timestamps stored as ISODate in MongoDB (UTC timezone)
-- **Relative Time Display**: Human-readable time context (e.g., "2 hours ago", "in 3 days")
-- **Time Tracking Integration**: Active time tracking sessions with duration calculations
 - **Temporal Context in Prompts**: LLM receives current date/time with explicit UTC reference
 - **Test Command**: `/test` prefix allows memory verification without committing new memories
 
@@ -170,15 +96,6 @@ METRICS_ENABLED=true                   # Enable memory quality metrics collectio
 - **Vector-Based Retrieval**: Facts are stored with embeddings and retrieved using semantic similarity search
 - **Version Tracking**: Facts support versioning with archived history for tracking changes over time
 - **No Manual Schema Updates**: New facts can be learned on-the-fly without code changes
-
-### Memory Quality Monitoring
-
-The system tracks memory health and provides insights:
-
-- **Hot Memories**: Frequently retrieved memories (likely high-value)
-- **Cold Memories**: Rarely retrieved (candidates for compression/archival)
-- **Confidence Distribution**: View confidence score distribution across all memories
-- **Success Rate Analysis**: Track how often retrieved memories satisfy user queries
 
 ## Architecture
 
@@ -216,67 +133,6 @@ flowchart TD
   style commitEpisodic fill:#9ec8d6,stroke:#333, color:#000
   style commitSemantic fill:#9ec8d6,stroke:#333, color:#000
 ```
-
-### Memory Architecture
-
-```mermaid
-flowchart TD
-  rawEvent[Raw Event] --> episodic[Episodic Memory]
-  
-  episodic -->|Direct Query| vectorSearch1[Vector Search]
-  episodic -->|Bucketing| temporalIndex[Temporal Index]
-  
-  thematic[Thematic Memory] <--> episodic
-  thematic --> vectorSearch2[Vector Search]
-  
-  semantic[Semantic Memory] <--> thematic
-  semantic --> vectorSearch3[Vector Search]
-  
-  temporalIndex --> timeRange[Time-Based Queries]
-  
-  vectorSearch1 --> queryResults
-  vectorSearch2 --> queryResults
-  vectorSearch3 --> queryResults
-  
-  link1[Memory Links] <--> episodic
-  link2[Memory Links] <--> semantic
-  
-  decay1[Decay System] --> episodic
-  decay2[Decay System] --> semantic
-  
-  compression1[Compression] --> episodic
-  compression2[Compression] --> thematic
-```
-
-## Environment
-
-This system is built and runs on the following hardware and software configuration:
-
-### Hardware
-
-| Component | Specification |
-|-----------|---------------|
-| **Machine** | 2025 Apple Mac Studio M3 Ultra |
-| **CPU** | 28 cores (20 Performance + 8 Efficiency) |
-| **GPU** | 60 GPU Cores @ 819.3 GB/s memory bandwidth |
-| **RAM** | 96GB Unified Memory |
-
-### Software Stack
-
-| Component | Version/Details |
-|-----------|-----------------|
-| **Python** | 3.13 |
-| **MongoDB** | 8.2.4 with Vector Search |
-| **LLM Inference** | llama.cpp server (build 7990) |
-| **LLM Model** | Qwen/Qwen3-Coder-Next-GGUF:Q4_K_M |
-| **Embedding Model** | jsonMartin/voyage-4-nano-gguf |
-
-### Performance Considerations
-
-- The M3 Ultra's 96GB unified memory allows for efficient handling of large models and embeddings without swapping
-- The 819.3 GB/s memory bandwidth enables fast data transfers between CPU, GPU, and neural engine
-- Vector search in MongoDB leverages the high memory bandwidth for fast similarity searches
-- llama.cpp's quantized models (Q4_K_M) provide a good balance between inference speed and model quality on Apple Silicon
 
 ## Requirements
 
@@ -325,23 +181,6 @@ EMBEDDING_DIMENSIONS=1024
 SHORT_TERM_MEMORY_SIZE=10
 EPISODIC_MEMORY_LIMIT=100
 VECTOR_SEARCH_LIMIT=5
-
-# Temporal Indexing Configuration
-TEMPORAL_BUCKET_SIZE=day               # hour, day, week, or month
-
-# Memory Linking Configuration
-LINKING_ENABLED=true                   # Enable bidirectional memory linking
-
-# Automated Management Configuration
-MEMORY_CLEANUP_INTERVAL_HOURS=24       # Hours between cleanup runs
-MAX_SYSTEM_PROMPT_VERSIONS=5           # Maximum system prompt versions to keep
-
-# Compression Configuration
-COMPRESSION_ENABLED=true               # Enable memory compression
-COMPRESS_AFTER_DAYS=30                 # Compress episodic memories after this many days
-
-# Quality Metrics Configuration
-METRICS_ENABLED=true                   # Enable memory quality metrics collection
 
 # Telegram Configuration
 # Get your bot token from @BotFather on Telegram
@@ -434,18 +273,16 @@ The API provides OpenAI-compatible endpoints:
 - `POST /api/v1/facts` - Create fact
 - `GET /api/v1/facts/{key}` - Get fact
 - `DELETE /api/v1/facts/{key}` - Delete fact
-- `GET /api/v1/tasks` - List tasks
-- `POST /api/v1/tasks` - Create task
-- `GET /api/v1/tasks/{task_id}` - Get task
-- `DELETE /api/v1/tasks/{task_id}` - Delete task
 - `GET /api/v1/memories/episodic` - List episodic memories
 - `POST /api/v1/memories/episodic` - Add episodic memory
 
 #### Memory Management Endpoints
 
-- `GET /api/v1/memory/schedule` - Get memory cleanup schedule
-- `PUT /api/v1/memory/schedule` - Update memory cleanup schedule
-- `POST /api/v1/memory/run-cleanup` - Run memory cleanup manually
+- `GET /api/v1/memory-management/schedule` - Get memory cleanup schedule
+- `POST /api/v1/memory-management/schedule` - Update memory cleanup schedule
+- `GET /api/v1/memory-management/status` - Get memory management status
+- `GET /api/v1/memory-management/metrics` - Get memory management metrics
+- `POST /api/v1/memory-management/run` - Run memory management tasks manually
 
 #### Example API Usage
 
@@ -462,10 +299,25 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 curl http://localhost:8000/health
 
 # Get memory cleanup schedule
-curl -X GET http://localhost:8000/api/v1/memory/schedule
+curl -X GET http://localhost:8000/api/v1/memory-management/schedule
 
-# Run memory cleanup manually
-curl -X POST http://localhost:8000/api/v1/memory/run-cleanup
+# Get memory management status
+curl -X GET http://localhost:8000/api/v1/memory-management/status
+
+# Get memory management metrics
+curl -X GET http://localhost:8000/api/v1/memory-management/metrics
+
+# Run memory management tasks manually
+curl -X POST http://localhost:8000/api/v1/memory-management/run
+
+# Update memory management schedule
+curl -X POST http://localhost:8000/api/v1/memory-management/schedule \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cron_expression": "0 2 * * *",
+    "enabled": true,
+    "tasks": ["system_prompt_versions", "stale_memories"]
+  }'
 ```
 
 #### OpenWebUI Integration

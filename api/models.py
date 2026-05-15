@@ -97,30 +97,6 @@ class FactResponse(BaseModel):
     updated_at: Optional[str] = None
 
 
-class TaskCreateRequest(BaseModel):
-    """Request model for creating a task."""
-    title: str = Field(..., description="Task title")
-    description: str = Field(default="", description="Task description")
-    status: Optional[str] = Field(default="pending", description="Task status")
-    priority: Optional[str] = Field(default="medium", description="Task priority")
-    due_date: Optional[str] = Field(default=None, description="Due date (ISO format)")
-    tags: Optional[List[str]] = Field(default=None, description="Task tags")
-
-
-class TaskResponse(BaseModel):
-    """Response model for task operations."""
-    id: str
-    title: str
-    description: str
-    status: str
-    priority: str
-    due_date: Optional[str]
-    created_at: str
-    updated_at: str
-    progress: int
-    tags: List[str]
-
-
 class MemoryManagementRunRequest(BaseModel):
     """Request model for running memory cleanup tasks."""
     task_names: Optional[List[str]] = Field(default=None, description="Specific task names to run. If None, runs all configured tasks.")
