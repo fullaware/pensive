@@ -36,16 +36,17 @@ class FactSchema:
         expires_at: Optional[datetime] = None,
         conflict_status: str = "resolved",
         source_weight: float = 1.0,
+        archived: bool = False,
     ) -> Dict:
         """Create a new fact document.
         
         Args:
             category: Fact category (user, system, preference, etc.)
-            key: Unique fact key
+            key: Unique fact key (used as fact_key for versioning)
             value: Fact value
             confidence: Confidence score (0-1)
             metadata: Additional context
-            version: Version number
+            version: Version number (incremented when fact is updated)
             embedding: Optional pre-computed embedding
             related_memories: List of related memory IDs (episodic or facts)
             source: Original source (conversation ID, external API, manual entry)
@@ -54,6 +55,7 @@ class FactSchema:
             expires_at: Optional expiration date for ephemeral facts
             conflict_status: "resolved", "disputed", or "pending"
             source_weight: Weight for conflict resolution (0-1)
+            archived: Whether this fact version is archived (deprecated: use is_active instead)
         """
         now = datetime.now(timezone.utc)
         doc = {
@@ -73,6 +75,7 @@ class FactSchema:
             "source_weight": source_weight,
             "expires_at": expires_at,
             "conflict_status": conflict_status,
+            "archived": archived,
         }
         if embedding is not None:
             doc["embedding"] = embedding

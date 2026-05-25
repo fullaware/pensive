@@ -342,9 +342,9 @@ async def add_episodic_memory(
     """Add an episodic memory."""
     try:
         event_id = await orchestrator.episodic.add_event(
-            session_id=session_id,
             role=role,
             content=content,
+            context={"session_id": session_id},
         )
         return {"id": event_id}
     except Exception as e:

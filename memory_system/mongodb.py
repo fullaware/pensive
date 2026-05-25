@@ -180,6 +180,15 @@ class MongoDB:
             )
             if cls._logging_enabled:
                 logger.info("Compound index created for facts: key + version")
+
+            # Facts: Fast lookup for versioned fact store queries
+            # Used by store_fact() and get_fact() to find active facts by key
+            await cls._db.facts.create_index(
+                [("key", 1), ("archived", 1), ("version", -1)],
+                name="idx_facts_key_archived_version"
+            )
+            if cls._logging_enabled:
+                logger.info("Compound index created for facts: key + archived + version")
             
             # System prompts: Fast lookup for bootstrap prompts
             await cls._db.system_prompts.create_index(

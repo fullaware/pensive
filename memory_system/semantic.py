@@ -38,7 +38,7 @@ class SemanticMemory:
 
         Args:
             category: Fact category (user, system, preference, etc.)
-            key: Unique fact key
+            key: Unique fact key (fact_key)
             value: Fact value
             confidence: Confidence score (0-1)
             metadata: Additional context
@@ -53,7 +53,7 @@ class SemanticMemory:
             fact_text = f"{key}: {value}"
             embedding = await self.embedding_client.generate_embedding(fact_text)
         
-        # Check if fact with same key exists
+        # Check if fact with same key exists (and is active)
         existing = await self.get_fact(key)
         
         if existing and increment_version:
@@ -88,23 +88,148 @@ class SemanticMemory:
         result = await self.collection.insert_one(fact_doc)
         return str(result.inserted_id)
 
-    async def get_fact(self, key: str, category: Optional[str] = None) -> Optional[Dict]:
-        """Get a fact by key.
+    async def store_fact(
+        self,
+        fact_key: str,
+        content: Dict,
+        confidence: float = 1.0,
+        category: str = "",
+        embedding: Optional[List[float]] = None,
+    ) -> str:
+        """Store or update a fact using the versioned fact store with overwrite strategy.
+
+        This method implements a versioned fact store where facts are identified by
+        `fact_key` as the unique identifier. When a new fact with an existing fact_key
+        is stored, the following occurs:
+        1. All active records with the same fact_key are archived (archived=True)
+        2. A new record is created with version = max_existing_version + 1
+        3. The new record is marked as active (archived=False)
+        4. The old active records have archived_at set to now
+
+        Backwards compatible: Existing facts without the archived field will continue
+        to work. All read operations filter by archived=False by default.
 
         Args:
-            key: Fact key
+            fact_key: Unique identifier for the fact (e.g., "current_role", "spouse_name")
+            content: Dictionary of fact content with key-value pairs. The 'value' field
+                     will be extracted and stored. Can be a string or structured dict.
+            confidence: Confidence score (0-1), defaults to 1.0
+            category: Optional category (e.g., "persona", "project"), defaults to ""
+            embedding: Optional pre-computed embedding for vector search
+
+        Returns:
+            The ObjectId string of the newly created/updated fact
+
+        Example:
+            # Store a new fact
+            fact_id = await semantic.store_fact(
+                fact_key="current_role",
+                content={"value": "Software Engineer", "source": "bootstrap"},
+                category="persona",
+                confidence=1.0
+            )
+
+            # Update the fact (old version gets archived automatically)
+            fact_id = await semantic.store_fact(
+                fact_key="current_role",
+                content={"value": "Senior Software Engineer", "source": "conversation"},
+                category="persona",
+                confidence=0.95
+            )
+        """
+        # Extract the value from content
+        if isinstance(content, dict):
+            fact_value = content.get("value", str(content))
+            # Preserve any additional metadata from content
+            extra_meta = {k: v for k, v in content.items() if k != "value"}
+        else:
+            fact_value = str(content)
+            extra_meta = {}
+
+        # Generate embedding if not provided
+        if embedding is None:
+            fact_text = f"{fact_key}: {fact_value}"
+            embedding = await self.embedding_client.generate_embedding(fact_text)
+
+        # Check if any active fact with this fact_key exists
+        # Query only active (non-archived) facts with this key
+        existing_active = await self.collection.find_one({
+            "key": fact_key,
+            "archived": {"$ne": True}
+        })
+
+        if existing_active:
+            # Archive all active records with the same fact_key
+            await self.collection.update_many(
+                {"key": fact_key, "archived": {"$ne": True}},
+                {"$set": {"archived": True, "archived_at": datetime.now(timezone.utc)}}
+            )
+
+            # Calculate new version: max of all existing versions + 1
+            cursor = self.collection.find({"key": fact_key})
+            all_versions = await cursor.to_list(length=None)
+            max_version = max((v.get("version", 1) for v in all_versions), default=0)
+            new_version = max_version + 1
+
+            # Create new fact document
+            fact_doc = FactSchema.create(
+                category=category,
+                key=fact_key,
+                value=fact_value,
+                confidence=confidence,
+                metadata={**(existing_active.get("metadata", {})), **extra_meta},
+                version=new_version,
+                embedding=embedding,
+                archived=False,  # New fact is active
+            )
+        else:
+            # No active fact exists with this key - create version 1
+            fact_doc = FactSchema.create(
+                category=category,
+                key=fact_key,
+                value=fact_value,
+                confidence=confidence,
+                metadata={**extra_meta},
+                version=1,
+                embedding=embedding,
+                archived=False,  # New fact is active
+            )
+
+        result = await self.collection.insert_one(fact_doc)
+        return str(result.inserted_id)
+
+    async def get_fact(self, key: str, category: Optional[str] = None) -> Optional[Dict]:
+        """Get the active fact by key.
+
+        For the versioned fact store, this method prioritizes active (non-archived) facts.
+        If no active fact exists, falls back to returning the latest version regardless
+        of archived status (backwards compatibility with existing data).
+
+        Args:
+            key: Fact key (fact_key identifier)
             category: Optional category filter
 
         Returns:
-            Fact document or None if not found
+            Active fact document, or latest version if no active fact exists
         """
-        query = {"key": key}
+        base_query = {"key": key}
         if category:
-            query["category"] = category
+            base_query["category"] = category
 
-        # Get the latest version of the fact
-        fact = await self.collection.find_one(query, sort=[("version", -1)])
-        return fact
+        # First try: Get active fact with highest version
+        active_fact = await self.collection.find_one(
+            {**base_query, "archived": {"$ne": True}},
+            sort=[("version", -1)]
+        )
+        if active_fact:
+            return active_fact
+
+        # Fallback: No active fact found, return latest version (any status)
+        # This maintains backwards compatibility with existing data
+        return await self.collection.find_one(
+            base_query,
+            sort=[("version", -1)]
+        )
 
     async def get_latest_fact_version(self, key: str) -> Optional[Dict]:
         """Get the latest version of a fact by key.
@@ -234,14 +359,48 @@ class SemanticMemory:
         return facts
 
     async def get_all_facts(self) -> List[Dict]:
-        """Get all non-archived facts.
+        """Get all facts, including latest version of each key.
+
+        For each unique fact_key, returns the active (non-archived) version if one
+        exists. If no active version exists, returns the latest archived version.
+        This ensures that the bootstrap prompt always has complete identity
+        information (user_name, name, etc.) even when facts have been updated.
 
         Returns:
-            List of all non-archived fact documents
+            List of fact documents (one per unique key)
         """
-        cursor = self.collection.find({"archived": {"$ne": True}})
-        facts = await cursor.to_list(length=None)
-        return facts
+        cursor = self.collection.find({})
+        all_facts = await cursor.to_list(length=None)
+
+        # Group by key and return the best version for each key
+        latest_by_key = {}
+        for fact in all_facts:
+            key = fact.get("key")
+            if not key:
+                continue
+
+            if key not in latest_by_key:
+                latest_by_key[key] = fact
+            else:
+                existing = latest_by_key[key]
+                existing_archived = existing.get("archived", False)
+                current_archived = fact.get("archived", False)
+
+                # Prefer non-archived over archived
+                if not existing_archived and current_archived:
+                    # Keep existing (non-archived)
+                    pass
+                elif existing_archived and not current_archived:
+                    # Replace with new (non-archived)
+                    latest_by_key[key] = fact
+                else:
+                    # Both have same archived status - prefer higher version
+                    existing_version = existing.get("version", 0)
+                    current_version = fact.get("version", 0)
+                    if current_version > existing_version:
+                        latest_by_key[key] = fact
+
+        return list(latest_by_key.values())
 
     async def get_user_name(self) -> Optional[str]:
         """Get the user's name from facts.
