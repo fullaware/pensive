@@ -434,6 +434,51 @@ class SemanticMemory:
         facts = await self.get_facts_by_category("user")
         return {f.get("key", ""): f.get("value", "") for f in facts}
 
+    def _resolve_latest_per_key(self, facts: List[Dict], limit: int = None) -> List[Dict]:
+        """Return the latest version of each unique fact_key.
+
+        For each unique fact_key, returns the active (non-archived) version if one
+        exists. If no active version exists, returns the latest archived version.
+
+        Args:
+            facts: List of fact documents (from a find() query)
+            limit: Maximum number of results to return
+
+        Returns:
+            List of fact documents (one per unique key), limited
+        """
+        latest_by_key = {}
+        for fact in facts:
+            key = fact.get("key")
+            if not key:
+                continue
+
+            if key not in latest_by_key:
+                latest_by_key[key] = fact
+            else:
+                existing = latest_by_key[key]
+                existing_archived = existing.get("archived", False)
+                current_archived = fact.get("archived", False)
+
+                # Prefer non-archived over archived
+                if not existing_archived and current_archived:
+                    # Keep existing (non-archived)
+                    pass
+                elif existing_archived and not current_archived:
+                    # Replace with new (non-archived)
+                    latest_by_key[key] = fact
+                else:
+                    # Both have same archived status - prefer higher version
+                    existing_version = existing.get("version", 0)
+                    current_version = fact.get("version", 0)
+                    if current_version > existing_version:
+                        latest_by_key[key] = fact
+
+        result = list(latest_by_key.values())
+        if limit is not None:
+            result = result[:limit]
+        return result
+
     async def vector_search(
         self, query: str, filters: Optional[Dict] = None, limit: int = None
     ) -> List[Dict]:
@@ -461,15 +506,16 @@ class SemanticMemory:
             )
         
         if not query_embedding:
-            # Fall back to returning all non-archived facts
-            cursor = self.collection.find({"archived": {"$ne": True}})
-            results = await cursor.to_list(length=limit or self.vector_limit)
+            # Fall back to returning the latest version of each unique fact_key
+            cursor = self.collection.find({})
+            all_facts = await cursor.to_list(length=None)
+            results = self._resolve_latest_per_key(all_facts, limit or self.vector_limit)
             duration_ms = (time.time() - start_time) * 1000
             if db._logging_enabled:
                 await db.log_query(
                     COLLECTION_FACTS, 
                     "find", 
-                    {"archived": {"$ne": True}},
+                    {},
                     {"count": len(results)},
                     duration_ms
                 )
@@ -506,22 +552,23 @@ class SemanticMemory:
                     duration_ms
                 )
             
-            # If no results from vector search, fall back to all non-archived facts
+            # If no results from vector search, fall back to the latest version of each fact_key
             if not results:
-                cursor = self.collection.find({"archived": {"$ne": True}})
-                results = await cursor.to_list(length=limit or self.vector_limit)
+                cursor = self.collection.find({})
+                all_facts = await cursor.to_list(length=None)
+                results = self._resolve_latest_per_key(all_facts, limit or self.vector_limit)
                 if db._logging_enabled:
                     await db.log_query(
                         COLLECTION_FACTS, 
                         "find_fallback", 
-                        {"archived": {"$ne": True}},
+                        {},
                         {"count": len(results)},
                         duration_ms
                     )
             
             return results
         except Exception as e:
-            # Vector search not available, return all non-archived facts
+            # Vector search not available, fall back to the latest version of each fact_key
             duration_ms = (time.time() - start_time) * 1000
             if db._logging_enabled:
                 await db.log_query(
@@ -531,8 +578,9 @@ class SemanticMemory:
                     {},
                     duration_ms
                 )
-            cursor = self.collection.find({"archived": {"$ne": True}})
-            return await cursor.to_list(length=limit or self.vector_limit)
+            cursor = self.collection.find({})
+            all_facts = await cursor.to_list(length=None)
+            return self._resolve_latest_per_key(all_facts, limit or self.vector_limit)
 
     async def get_fact_with_decay(self, key: str, category: Optional[str] = None) -> Optional[Dict]:
         """Get a fact by key with decayed confidence.
