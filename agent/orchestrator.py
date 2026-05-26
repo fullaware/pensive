@@ -13,6 +13,7 @@ from memory_system import (
     SystemPromptsManager,
     Bootstrapper,
 )
+from memory_system.semantic import EmbeddingServiceUnavailable
 from services import LLMClient, EmbeddingClient
 from timemgmt import TaskManager, ReminderManager, TimeTracker
 
@@ -166,6 +167,12 @@ class AgenticOrchestrator:
         else:
             self.logger.log_stage("fact_detection", {"skipped": True, "reason": "test command"})
 
+        # If embedding service was unavailable, append notification to the answer
+        if memories.get("embedding_unavailable"):
+            notification = "\n\n⚠️ NOTE: The embedding/vector search service is currently unavailable. Semantic memory lookups are not working."
+            if not answer.endswith(notification):
+                answer = answer + notification
+
         summary = self.logger.get_summary()
         summary["answer_length"] = len(answer)
         summary["sources"] = memories.get("sources", [])
@@ -177,6 +184,7 @@ class AgenticOrchestrator:
             "session_id": session_id,
             "timing": summary,
             "is_test_command": is_test_command,
+            "embedding_unavailable": memories.get("embedding_unavailable", False),
         }
 
     async def _commit_to_episodic_background(self, user_query: str, answer: str) -> None:
@@ -222,7 +230,10 @@ class AgenticOrchestrator:
         memories = {"sources": [], "retrieved": {}}
 
         if "semantic" in routing["memory_systems"]:
-            facts = await self._query_semantic_memory(routing["query"])
+            semantic_result = await self._query_semantic_memory(routing["query"])
+            facts = semantic_result.get("facts", [])
+            if semantic_result.get("embedding_unavailable"):
+                memories["embedding_unavailable"] = True
             if facts:
                 memories["retrieved"]["semantic"] = facts
                 memories["sources"].append("semantic memory")
@@ -250,19 +261,25 @@ class AgenticOrchestrator:
 
         return memories
 
-    async def _query_semantic_memory(self, query: str) -> List[Dict]:
+    async def _query_semantic_memory(self, query: str) -> Dict:
         """Query semantic memory for relevant facts using vector search.
 
         Args:
             query: Query string
 
         Returns:
-            List of relevant facts
+            Dictionary with:
+                - facts: List of relevant facts (empty if embedding service unavailable)
+                - embedding_unavailable: Boolean flag indicating if the embedding service is unreachable
         """
         # Use vector search for semantic memory - it will find relevant facts based on similarity
         # Don't filter by category - let the vector search determine relevance
-        facts = await self.semantic.vector_search(query)
-        return facts
+        try:
+            facts = await self.semantic.vector_search(query)
+            return {"facts": facts, "embedding_unavailable": False}
+        except EmbeddingServiceUnavailable as e:
+            self.logger.log_stage("semantic_memory", {"error": str(e), "embedding_unavailable": True})
+            return {"facts": [], "embedding_unavailable": True}
 
     async def _query_episodic_memory(
         self, query: str, session_id: str

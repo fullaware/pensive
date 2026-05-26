@@ -7,6 +7,11 @@ from memory_system import db, FactSchema, COLLECTION_FACTS, Config
 import time
 
 
+class EmbeddingServiceUnavailable(Exception):
+    """Raised when the embedding service is unreachable during vector_search."""
+    pass
+
+
 class SemanticMemory:
     """Semantic memory manager for facts and knowledge."""
 
@@ -491,11 +496,11 @@ class SemanticMemory:
 
         Returns:
             List of matching facts sorted by similarity
+
+        Raises:
+            EmbeddingServiceUnavailable: When the embedding service is unreachable.
         """
-        # Generate embedding for the query
-        query_embedding = await self.embedding_client.generate_embedding(query)
-        
-        # Log the query (embedding will be masked by MongoDB.log_query)
+        # Log the query
         start_time = time.time()
         if db._logging_enabled:
             await db.log_query(
@@ -505,21 +510,32 @@ class SemanticMemory:
                 {"limit": limit or self.vector_limit}
             )
         
-        if not query_embedding:
-            # Fall back to returning the latest version of each unique fact_key
-            cursor = self.collection.find({})
-            all_facts = await cursor.to_list(length=None)
-            results = self._resolve_latest_per_key(all_facts, limit or self.vector_limit)
+        # Generate embedding for the query — if the embedding service is
+        # unreachable, raise EmbeddingServiceUnavailable instead of silently
+        # falling back.  This ensures the orchestrator can notify the user
+        # that vector search is unavailable.
+        try:
+            query_embedding = await self.embedding_client.generate_embedding(query)
+        except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
             if db._logging_enabled:
                 await db.log_query(
                     COLLECTION_FACTS, 
-                    "find", 
+                    "vectorSearch_embedding_error", 
+                    {"error": str(e)},
                     {},
-                    {"count": len(results)},
                     duration_ms
                 )
-            return results
+            raise EmbeddingServiceUnavailable(
+                f"Embedding service is unreachable: {e}"
+            ) from e
+        
+        if not query_embedding:
+            # Embedding service returned None — treat as unavailable
+            duration_ms = (time.time() - start_time) * 1000
+            raise EmbeddingServiceUnavailable(
+                "Embedding service returned no embedding; vector search unavailable"
+            )
 
         try:
             # Build aggregation pipeline for vector search
@@ -552,35 +568,24 @@ class SemanticMemory:
                     duration_ms
                 )
             
-            # If no results from vector search, fall back to the latest version of each fact_key
-            if not results:
-                cursor = self.collection.find({})
-                all_facts = await cursor.to_list(length=None)
-                results = self._resolve_latest_per_key(all_facts, limit or self.vector_limit)
-                if db._logging_enabled:
-                    await db.log_query(
-                        COLLECTION_FACTS, 
-                        "find_fallback", 
-                        {},
-                        {"count": len(results)},
-                        duration_ms
-                    )
-            
             return results
+        except EmbeddingServiceUnavailable:
+            # Re-raise our own exception
+            raise
         except Exception as e:
-            # Vector search not available, fall back to the latest version of each fact_key
+            # MongoDB vector search index not available
             duration_ms = (time.time() - start_time) * 1000
             if db._logging_enabled:
                 await db.log_query(
                     COLLECTION_FACTS, 
-                    "vectorSearch_error", 
+                    "vectorSearch_mongodb_error", 
                     {"error": str(e)},
                     {},
                     duration_ms
                 )
-            cursor = self.collection.find({})
-            all_facts = await cursor.to_list(length=None)
-            return self._resolve_latest_per_key(all_facts, limit or self.vector_limit)
+            raise EmbeddingServiceUnavailable(
+                f"Vector search index unavailable: {e}"
+            ) from e
 
     async def get_fact_with_decay(self, key: str, category: Optional[str] = None) -> Optional[Dict]:
         """Get a fact by key with decayed confidence.
